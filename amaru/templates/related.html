@@ -1,0 +1,1 @@
+<section class="card"><h3>{{ title }}</h3>{% for record in records %}<a class="related-link" href="/{{ module }}/{{ record.pk }}/">{{ record }} →</a>{% empty %}<p class="muted">Sin registros.</p>{% endfor %}</section>

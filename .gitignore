@@ -1,0 +1,80 @@
+# --- Python / Django ---
+*.pyc
+*.py[cod]
+*$py.class
+__pycache__/
+*.log
+*.pot
+db.sqlite3
+*.sqlite3
+media/
+staticfiles/
+local_settings.py
+
+# --- Claves y entornos virtuales ---
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+env/
+ENV/
+sftp-config.json
+
+# --- Respaldos y volcados de base de datos ---
+*.bak
+*.sql
+*.dump
+
+# --- Empaquetado ---
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+pip-log.txt
+
+# --- Pruebas ---
+.coverage
+htmlcov/
+.pytest_cache/
+
+# --- Editores ---
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.history
+
+# --- Archivos del sistema ---
+.DS_Store
+Thumbs.db
+# Archivos privados y materiales históricos de este espacio de trabajo
+.tools/
+respaldos/
+EXPORTACION*/
+exportacion_amaru_fuentes/
+*.zip
+*.tar.gz
+*.pem
+*.key
+*.p12
+*.pfx
+*credentials*.json
+pg-password.txt
+logs/
+tmp/
+output/
+verificacion*/
+hosting_amaru_actual/
+mockups_opticas_amaru/
+Chat_*.txt
+informe_*.txt
+*.lnk
+# No publicar reportes históricos ni herramientas con datos locales
+amaru/VALIDACION.md
+frontend_amaru/PUBLICACION_ACTUAL.md
+.run/*.local.xml
+!.env.example

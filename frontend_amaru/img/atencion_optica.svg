@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 320" role="img" aria-label="Ilustración de atención óptica demostrativa">
+<rect width="520" height="320" rx="24" fill="#ffedd5"/>
+<circle cx="400" cy="70" r="95" fill="#fed7aa"/>
+<rect x="335" y="58" width="102" height="131" rx="12" fill="#fff" stroke="#ea580c" stroke-width="3"/>
+<g fill="#c2410c" font-family="Arial,sans-serif" font-weight="bold" text-anchor="middle"><text x="386" y="96" font-size="34">E</text><text x="386" y="126" font-size="22">F P</text><text x="386" y="153" font-size="16">T O Z</text><text x="386" y="175" font-size="12">L P E D</text></g>
+<path d="M98 309v-38c0-47 37-73 89-73s90 28 90 73v38" fill="#ea580c"/>
+<path d="M169 206l18 26 20-26" fill="#fff"/>
+<rect x="166" y="165" width="42" height="47" rx="14" fill="#d98550"/>
+<ellipse cx="187" cy="126" rx="62" ry="70" fill="#f4b080"/>
+<path d="M125 128c-16-58 18-91 62-91 51 0 77 43 62 88l-12-36c-30 12-67 5-86-4l-17 44" fill="#512d21"/>
+<g fill="#fff7ed" fill-opacity=".65" stroke="#512d21" stroke-width="5"><rect x="137" y="110" width="43" height="30" rx="10"/><rect x="194" y="110" width="43" height="30" rx="10"/><path d="M180 119h14"/></g>
+<path d="M172 163q15 12 31 0" fill="none" stroke="#9a3412" stroke-width="4" stroke-linecap="round"/>
+<rect x="290" y="230" width="175" height="57" rx="13" fill="#fff"/>
+<g fill="none" stroke="#c2410c" stroke-width="5"><rect x="314" y="245" width="45" height="25" rx="9"/><rect x="372" y="245" width="45" height="25" rx="9"/><path d="M359 253h13"/></g>
+<circle cx="69" cy="79" r="28" fill="#f97316"/><path d="M56 79h26m-13-13v26" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+</svg>
