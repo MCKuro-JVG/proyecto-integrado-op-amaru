@@ -90,3 +90,18 @@ Pendientes indispensables:
 6. Revisar mejoras posteriores: búsqueda/paginación de selectores grandes (los formularios iniciales muestran la primera página de clientes/recetas/convenios), edición visual de múltiples líneas del catálogo, historial de inventario completo y automatización operativa de conciliación y respaldos.
 
 **No se declara terminada la integración completa Django + MariaDB + R2 mientras la conexión remota de R2 siga pendiente.**
+
+## GitHub y publicación
+
+Se creó el commit local inicial `a4edb65` con 91 archivos revisados, en `main`, y el remoto `origin` apunta al repositorio oficial. La consulta remota confirmó el repositorio público inicialmente vacío. La publicación no se pudo completar:
+
+- Git CLI no encontró credenciales para HTTPS en el entorno de ejecución sin interacción.
+- La conexión GitHub devolvió **403 — Resource not accessible by integration** al intentar crear el primer archivo. No se publicó una copia parcial.
+
+El estado local posterior se consulta con `git log -1`. Una vez autorizada una identidad con escritura en el repositorio, ejecutar desde la raíz:
+
+```powershell
+git push -u origin main
+```
+
+No se utilizó force push ni se reescribió historial compartido. Antes de repetir la publicación, comprobar que el remoto no recibió cambios del equipo. Las credenciales de GitHub no deben copiarse a `.env` ni incluirse en la URL del remoto.

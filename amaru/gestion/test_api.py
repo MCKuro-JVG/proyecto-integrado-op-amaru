@@ -197,6 +197,13 @@ class APITests(TestCase):
         with self.assertRaises(ValidationError):accept_receipt(o.pk,self.staff,True,'data:image/png;base64,'+base64.b64encode(buffer.getvalue()).decode())
         self.assertFalse(Receipt.objects.filter(order=o).exists())
 
+    def test_malformed_json_fields_return_validation_errors(self):
+        guest=HTTPClient()
+        self.assertEqual(guest.post('/api/login/',{'username':[],'password':{}},content_type='application/json').status_code,400)
+        o=self.order()
+        self.assertEqual(self.post(f'orders/{o.pk}/state/',{'status':[]}).status_code,400)
+        self.assertEqual(self.post(f'orders/{o.pk}/deliver/',{'review_token':[]}).status_code,400)
+
 
 class ConcurrencyTests(TransactionTestCase):
     def test_simultaneous_delivery_has_one_receipt(self):

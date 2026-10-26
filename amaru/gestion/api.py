@@ -135,7 +135,7 @@ class Orders(viewsets.ReadOnlyModelViewSet):
         with transaction.atomic():
             obj=Order.objects.select_for_update().get(pk=self.get_object().pk)
             value=request.data.get('status')
-            if obj.status=='Entregada' or value not in dict(Order.STATES) or value=='Entregada':
+            if obj.status=='Entregada' or not isinstance(value,str) or value not in dict(Order.STATES) or value=='Entregada':
                 raise ValidationError('Estado inválido. La entrega se registra desde el documento.')
             before=obj.status;obj.status=value;obj.save()
             audit(request.user,f'{before} → {value}',obj)
@@ -156,9 +156,11 @@ class Orders(viewsets.ReadOnlyModelViewSet):
         obj=self.get_object()
         if not request.user.has_perm('gestion.add_receipt') and obj.client.user_id!=request.user.pk:
             raise PermissionDenied()
+        token=request.data.get('review_token','')
+        if not isinstance(token,str) or len(token)>16000:raise ValidationError('La revisión del documento no es válida.')
         try:
-            reviewed=signing.loads(request.data.get('review_token',''),salt='delivery-review',max_age=600)
-        except signing.BadSignature: raise ValidationError('Vuelva a revisar el documento; la revisión expiró o no es válida.')
+            reviewed=signing.loads(token,salt='delivery-review',max_age=600)
+        except (signing.BadSignature,TypeError): raise ValidationError('Vuelva a revisar el documento; la revisión expiró o no es válida.')
         if reviewed['order']!=obj.pk: raise ValidationError('La revisión corresponde a otro pedido.')
         if request.data.get('accepted') is not True: raise ValidationError('Debe confirmar la recepción.')
         signature=request.data.get('signature','')
@@ -204,7 +206,7 @@ class Inquiries(viewsets.GenericViewSet):
         with transaction.atomic():
             obj=Inquiry.objects.select_for_update().get(pk=self.get_object().pk)
             value=request.data.get('status')
-            if value not in dict(Inquiry.STATES): raise ValidationError('Estado inválido.')
+            if not isinstance(value,str) or value not in dict(Inquiry.STATES): raise ValidationError('Estado inválido.')
             if value in ('Cerrada','Cancelada'): AppointmentReservation.objects.filter(inquiry=obj).delete()
             elif obj.kind=='agenda':
                 try:
@@ -282,7 +284,11 @@ def sign_in(request):
     attempts=cache.get(key,0)
     if attempts>=10: return Response({'detail':'Demasiados intentos. Espere cinco minutos.'},status=429)
     cache.set(key,attempts+1,300)
-    user=authenticate(request,username=request.data.get('username',''),password=request.data.get('password',''))
+    class Credentials(serializers.Serializer):
+        username=serializers.CharField(max_length=254)
+        password=serializers.CharField(max_length=1024,trim_whitespace=False)
+    credentials=Credentials(data=request.data);credentials.is_valid(raise_exception=True)
+    user=authenticate(request,**credentials.validated_data)
     if not user: return Response({'detail':'Credenciales inválidas.'},status=400)
     login(request,user);cache.delete(key)
     return Response({'detail':'Sesión iniciada.','csrf':get_token(request)})
@@ -299,7 +305,9 @@ def configuration(request):
     if not request.user.has_perm('gestion.change_siteconfiguration'): raise PermissionDenied()
     obj=SiteConfiguration.objects.first()
     if request.method=='PATCH':
-        terms=request.data.get('warranty_terms','').strip()
+        terms=request.data.get('warranty_terms','')
+        if not isinstance(terms,str):raise ValidationError('Las condiciones deben ser texto.')
+        terms=terms.strip()
         if not terms or len(terms)>12000: raise ValidationError('Condiciones requeridas, máximo 12000 caracteres.')
         with transaction.atomic():
             obj=obj or SiteConfiguration()
