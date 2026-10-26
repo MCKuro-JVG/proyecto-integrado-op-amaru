@@ -1,5 +1,3 @@
 # Backend Ópticas Amaru
 
-Consulte [README principal](../README.md) para instalación, MariaDB, R2, PyCharm, permisos y pruebas.
-
-Las credenciales son locales y no se incluyen en esta documentación. La versión anterior de este archivo está conservada en el respaldo privado previo a la integración.
+Consulte el [README principal](../README.md) para instalación, MariaDB, R2, PyCharm, permisos y pruebas. Cada integrante debe mantener sus credenciales en archivos de entorno privados.

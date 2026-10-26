@@ -19,7 +19,6 @@ if (-not $taskOnline) {
         $taskCandidates += Get-ChildItem -LiteralPath $taskPythonInstallRoot -Directory -ErrorAction SilentlyContinue |
             Sort-Object Name -Descending | ForEach-Object { Join-Path $_.FullName 'python.exe' }
     }
-    $taskCandidates += Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe'
     $taskPython = $null
     foreach ($taskCandidate in ($taskCandidates | Select-Object -Unique)) {
         if (Test-Path -LiteralPath $taskCandidate -PathType Leaf) {

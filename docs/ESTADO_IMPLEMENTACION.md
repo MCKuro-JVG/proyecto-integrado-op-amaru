@@ -1,4 +1,6 @@
-# Estado técnico de la implementación — 25 de octubre de 2026
+# Registro técnico de implementación — 25 de octubre de 2026
+
+Este documento conserva los resultados de la implementación inicial. Para el traslado, la nueva verificación y la publicación oficial, consulte [FINALIZACION.md](FINALIZACION.md).
 
 ## Resultado y alcance verificado
 
@@ -10,8 +12,8 @@ Se instalaron DRF 3.16.1, django-storages 1.14.6 y boto3 1.43.118 en el entorno 
 
 ## Trabajo conservado
 
-- Copia previa completa del backend y frontend en `respaldos/backend_antes_integracion_20261025/`, excluida de Git.
-- Configuración PostgreSQL anterior en `amaru/.env.postgres.legacy`, excluida de Git. Su clúster y sus archivos no se eliminaron ni migraron.
+- Copia previa completa del backend y frontend en el archivo privado del proyecto, excluida de Git.
+- Configuración PostgreSQL anterior conservada en el archivo privado, fuera de Git. Su clúster y sus archivos no se eliminaron ni migraron.
 - Aplicación `gestion`, modelos de clientes/recetas/cotizaciones/OT/garantías/recepción/auditoría, formularios, plantillas, servicios y migraciones anteriores reutilizados.
 - Las 15 interfaces HTML, los estilos naranjas, ilustraciones y funciones DEMO de `frontend_amaru` permanecen. El modo conectado utiliza esos HTML con otro motor JavaScript servido por Django.
 - El hosting estático anterior y su publicación no se modificaron. Continúan como demostración independiente del servidor local.

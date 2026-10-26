@@ -1,6 +1,6 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="false" name="Amaru Django" type="PythonConfigurationType" factoryName="Python">
-    <module name="op amaru informe" />
+    <module name="OpticasAmaru" />
     <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/amaru" />
     <option name="SCRIPT_NAME" value="$PROJECT_DIR$/amaru/manage.py" />
     <option name="PARAMETERS" value="runserver 127.0.0.1:8001" />
