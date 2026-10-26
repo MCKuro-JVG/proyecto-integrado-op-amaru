@@ -8,7 +8,7 @@ El proyecto se verificó desde **C:\Proyectos\OpticasAmaru**. Es la ubicación p
 
 Se reconstruyó `.venv` con Python 3.12.10 y las versiones de `amaru/requirements-lock.txt`. El historial Git anterior se conserva, incluidos los commits `a4edb65` y `dc30c58`, sin alterar autores, fechas ni contenido histórico. Los cambios de presentación se registran mediante commits nuevos.
 
-Se creó un respaldo completo externo de la ubicación anterior y un volcado lógico de MariaDB. La base se detuvo de manera ordenada antes de copiar su directorio de datos. Los respaldos permanecen fuera del repositorio; su registro detallado de integridad es privado.
+Se creó un respaldo completo externo de la ubicación anterior y un volcado lógico de MariaDB. La base se detuvo de manera ordenada antes de copiar su directorio de datos. Se compararon **35.161 archivos, 2.874.941.334 bytes**, con SHA-256 frente al original: **sin diferencias**. El volcado lógico también tiene un hash de control. Los respaldos permanecen fuera del repositorio; su registro detallado de integridad es privado.
 
 ## Estructura
 
@@ -48,7 +48,7 @@ Las referencias históricas que corresponden a commits previos se conservan en e
 - Usuario de aplicación limitado a SELECT, INSERT, UPDATE y DELETE sobre la base del proyecto; usuario distinto para migraciones/pruebas.
 - Proceso MariaDB iniciado desde la instalación portable de la nueva carpeta. Se actualizaron sus rutas privadas de datos y plugins.
 - El servidor Django usa el intérprete nuevo y el directorio de trabajo de la nueva ubicación.
-- Se recuperaron los documentos existentes y se verificó una entrega nueva mediante la interfaz.
+- Se recuperaron los documentos existentes y se verificó una entrega nueva mediante la interfaz. No faltan recetas, firmas ni PDF referenciados; se comprobaron los hashes de los tres PDF existentes. La variable `datadir` de MariaDB apunta a la nueva ubicación.
 
 El frontend conectado utiliza la API y MariaDB. La demostración con localStorage permanece conservada, pero no se carga desde `/app/`. Una prueba introdujo un dato ficticio únicamente en el almacenamiento de la demostración y comprobó que no se mostró en los registros del servidor.
 
@@ -86,14 +86,16 @@ Repositorio oficial: <https://github.com/MCKuro-JVG/proyecto-integrado-op-amaru>
 
 La autorización de Git Credential Manager se completó mediante el flujo oficial de dispositivo. Se verificó que la identidad autenticada es el propietario y tiene permisos de escritura sobre el repositorio. Las credenciales permanecen en el almacén del sistema, fuera del código.
 
-La publicación debe comprobarse comparando el identificador local y el remoto:
+La publicación en `main` se completó mediante push normal. La comprobación inicial encontró el mismo commit local y remoto: `d37e3505a313187b49a0729ff59552472ac10230`. La API pública de GitHub confirmó 93 archivos, las 15 interfaces y el README accesible; el árbol remoto coincide con el local. Los commits anteriores permanecen como ancestros. Este informe puede añadir un commit documental posterior; la versión vigente se consulta así:
 
 ```powershell
 git rev-parse HEAD
 git ls-remote origin refs/heads/main
 ```
 
-El resultado final de esa comprobación se registra en la entrega. Se utiliza push normal, sin force push ni modificación del historial compartido.
+La identidad y los permisos efectivos se verificaron mediante la autenticación CLI, resolviendo el bloqueo de publicación anterior. Se utilizó push normal, sin force push ni modificación del historial compartido.
+
+La revisión previa cubrió los 93 archivos seleccionados y 90 blobs históricos: no detectó coincidencias con las credenciales locales, claves privadas, bases, medios ni registros privados. Las referencias personales y de preparación innecesarias fueron retiradas del contenido vigente; el historial original se conserva. La revisión no equivale a una certificación universal de ausencia de secretos desconocidos.
 
 ## PyCharm y ejecución
 

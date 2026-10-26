@@ -2,7 +2,7 @@
 
 Aplicación académica para atención óptica. Evolución del backend `amaru/gestion` y de las interfaces HTML, CSS y JavaScript existentes; no es un proyecto independiente.
 
-**Estado:** aplicación local Django + MariaDB. La verificación remota de R2 queda pendiente por decisión del equipo; no está activado como almacenamiento principal. El código conserva el historial y el frontend original.
+**Estado:** código publicado en la rama `main` del repositorio oficial y aplicación local Django + MariaDB. La verificación remota de R2 queda pendiente por decisión del equipo; no está activado como almacenamiento principal. El código conserva el historial y el frontend original.
 
 ## Tecnologías y estructura
 
