@@ -4,7 +4,7 @@
 
 Se reutilizan `amaru/gestion`, sus dos migraciones originales, servicios, formularios, pruebas y plantillas. Se mantienen las 15 interfaces de `frontend_amaru`, sus estilos naranjas, recursos y motor de demostración. La vista `/app/` sirve esos mismos HTML con `amaru/static/server.js` y API de Django; no carga `storage.js` ni `app.js` de la demostración.
 
-La propuesta vigente es **Django + MariaDB + Cloudflare R2**. MongoDB no se incorpora: los archivos son objetos en R2 y sus referencias están en MariaDB. PostgreSQL permanece respaldado y sin migración automática de sus datos. No hay integración con OptiClick.
+La arquitectura vigente es **Django + MariaDB + Cloudflare R2**. R2 quedó activado y verificado en el equipo local el 26 de octubre de 2026; véase [CLOUDFLARE_R2.md](CLOUDFLARE_R2.md). MongoDB no se incorpora: los archivos son objetos en R2 y sus referencias están en MariaDB. PostgreSQL permanece respaldado y sin migración automática de sus datos. No hay integración con OptiClick.
 
 ## Relaciones y almacenamiento
 
@@ -49,7 +49,7 @@ Autenticación de sesión Django con CSRF en operaciones del navegador. Cuatro g
 
 R2 privado es el destino predeterminado. El acceso autorizado se audita y entrega un archivo privado local o una URL firmada de duración limitada. Las claves nunca se envían al navegador. Los permisos del bucket deben comprobarse contra Cloudflare; el código no habilita acceso público a ningún bucket.
 
-Las reglas EPS se materializan parcialmente en autenticación, permisos, validación, control de archivos, auditoría y configuración separada. No se declara certificación de cumplimiento EPS01–EPS14. Para producción falta validar infraestructura, HTTPS, secretos, caché compartida, recuperación de respaldos, políticas de conservación y operación remota de R2.
+Las reglas EPS se materializan parcialmente en autenticación, permisos, validación, control de archivos, auditoría y configuración separada. No se declara certificación de cumplimiento EPS01–EPS14. Para producción falta validar infraestructura, HTTPS, secretos, caché compartida, recuperación de respaldos, políticas de conservación y políticas operativas de R2. La conexión remota y el flujo de entrega de prueba sí se verificaron, según el registro de Cloudflare.
 
 ## Límites conservados
 

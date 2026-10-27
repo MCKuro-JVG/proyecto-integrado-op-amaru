@@ -1,6 +1,6 @@
 # Registro técnico de implementación — 25 de octubre de 2026
 
-Este documento conserva los resultados de la implementación inicial. Para el traslado, la nueva verificación y la publicación oficial, consulte [FINALIZACION.md](FINALIZACION.md).
+Este documento conserva los resultados de la implementación inicial. El estado posterior de R2, activado y verificado el 26 de octubre, está en [CLOUDFLARE_R2.md](CLOUDFLARE_R2.md). Para el traslado, la nueva verificación y la publicación oficial, consulte [FINALIZACION.md](FINALIZACION.md).
 
 ## Resultado y alcance verificado
 

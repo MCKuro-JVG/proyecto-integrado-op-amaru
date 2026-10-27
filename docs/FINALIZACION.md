@@ -2,6 +2,9 @@
 
 Fecha del informe: 25 de octubre de 2026.
 
+> Actualización Cloudflare: el estado posterior de R2 se documenta en [CLOUDFLARE_R2.md](CLOUDFLARE_R2.md). Este archivo conserva el registro del 25 de octubre.
+
+
 ## Ubicación principal
 
 El proyecto se verificó desde **C:\Proyectos\OpticasAmaru**. Es la ubicación principal de desarrollo local. La carpeta anterior se conserva intacta como archivo histórico y no debe utilizarse simultáneamente para iniciar otra instancia sobre los mismos puertos.

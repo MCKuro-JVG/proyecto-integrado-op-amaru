@@ -2,7 +2,7 @@
 
 Aplicación académica para atención óptica. Evolución del backend `amaru/gestion` y de las interfaces HTML, CSS y JavaScript existentes; no es un proyecto independiente.
 
-**Estado:** código publicado en la rama `main` del repositorio oficial y aplicación local Django + MariaDB. La verificación remota de R2 queda pendiente por decisión del equipo; no está activado como almacenamiento principal. El código conserva el historial y el frontend original.
+**Estado:** aplicación local Django + MariaDB con Cloudflare R2 activado y verificado el 26 de octubre de 2026. Las recetas, firmas y PDF se guardan en `amaru-privado`; las imágenes del catálogo utilizan `amaru-publico`. Se comprobaron 59 pruebas automatizadas sobre MariaDB y 35 verificaciones de interfaz en Chrome. Consulte [la conexión y las pruebas de R2](docs/CLOUDFLARE_R2.md). El repositorio conserva el historial y el frontend original. Las credenciales y los medios no se publican.
 
 ## Tecnologías y estructura
 
@@ -120,7 +120,7 @@ Configurar únicamente desde la cuenta autorizada:
 1. Bucket `amaru-publico`: solo imágenes del catálogo, con dominio público configurado.
 2. Bucket `amaru-privado`: sin `r2.dev` público, sin dominio público ni reglas que permitan acceso anónimo. Contiene recetas, firmas y PDF.
 3. Credenciales S3 con lectura/escritura limitadas a esos buckets. Guardarlas en `.env`, nunca en HTML, JavaScript o GitHub. No activar servicios de pago desde scripts.
-4. Cuando el equipo autorice la conexión, preparar `amaru/.env.r2`, privado, con la configuración MariaDB y Django más `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT_URL`, `R2_BUCKET_PUBLICO`, `R2_BUCKET_PRIVADO`, `R2_DOMINIO_PUBLICO` (sin https://) y `R2_URL_SECONDS=600`. Mantener `R2_ENABLED=False` en el `.env` normal.
+4. En un equipo nuevo, preparar `amaru/.env.r2`, privado, con la configuración MariaDB y Django más `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT_URL`, `R2_BUCKET_PUBLICO`, `R2_BUCKET_PRIVADO`, `R2_DOMINIO_PUBLICO` (sin https://) y `R2_URL_SECONDS=600`. Mantener `R2_ENABLED=False` en el `.env` normal hasta superar las pruebas iniciales y copiar los archivos que ya existan. En el equipo principal esta transición ya se completó; su `.env` utiliza `R2_ENABLED=True`.
 5. Ejecutar la verificación en un proceso separado; no iniciar el servidor con esta configuración:
 
 ```powershell
@@ -129,7 +129,7 @@ $env:AMARU_ENV_FILE = "$PWD\amaru\.env.r2"
 Remove-Item Env:AMARU_ENV_FILE
 ```
 
-Ese comando utiliza archivos ficticios, verifica referencias SQL, subida, recuperación y URL firmada, y elimina los datos temporales. El rechazo de la URL S3 sin firma no demuestra que no exista un dominio público alternativo: revisar también el panel de Cloudflare. Antes de activar R2 para la aplicación, se debe aprobar además el flujo completo de entrega con almacenamiento privado y la migración de los archivos locales existentes. Esa prueba sigue pendiente hasta nueva autorización del equipo.
+Ese comando utiliza archivos ficticios, verifica referencias SQL, subida, recuperación y URL firmada, y elimina los datos temporales. El rechazo de la URL S3 sin firma no demuestra que no exista un dominio público alternativo: revisar también el panel de Cloudflare. Antes de activar R2 para la aplicación, se debe aprobar además el flujo completo de entrega con almacenamiento privado y la migración de los archivos locales existentes. En el equipo principal ambas comprobaciones ya se completaron; el detalle está en [CLOUDFLARE_R2.md](docs/CLOUDFLARE_R2.md). Para comprobar posteriormente la configuración activa basta ejecutar `python amaru/manage.py verify_r2`.
 
 Se utiliza la API `STORAGES` de Django 5.2. El destino predeterminado es **privado**. Cada campo declara su almacenamiento. La base guarda claves de objetos, nunca URLs firmadas permanentes. El backend comprueba permisos antes de entregar la URL de 600 segundos; quien posea esa URL podrá usarla durante su vigencia.
 

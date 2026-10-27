@@ -78,3 +78,7 @@ amaru/VALIDACION.md
 frontend_amaru/PUBLICACION_ACTUAL.md
 .run/*.local.xml
 !.env.example
+
+.cloudflare/
+
+node_modules/
