@@ -205,3 +205,12 @@ El panel Resumen y Solicitudes recibidas incluyen **Mostrar QR de atención**. E
 En el equipo de demostración, ejecutar `Iniciar_Atencion_QR.cmd`: prepara los servicios y abre las herramientas disponibles. La URL temporal se obtiene con `cf tunnels quick-start` y se actualiza centralmente; nunca se genera un QR con localhost. `Detener_Atencion_QR.cmd` cierra el acceso público. El túnel también se cierra automáticamente a las dos horas.
 
 La demostración remota usa **otra base**, `opticas_amaru_qr_demo`, y un panel privado accesible solo desde `http://127.0.0.1:8003/app/solicitudes.html`. La base habitual `opticas_amaru` permanece en el puerto 8001. No se copian datos reales hacia el entorno expuesto. Véase [ATENCION_QR.md](docs/ATENCION_QR.md) para la configuración, el alcance, las pruebas y los pasos de presentación.
+
+
+## Disponibilidad y servicios locales
+
+En el equipo de revisión se instalaron, con autorización, `OpticasAmaruDatabase` y `OpticasAmaruAttention`: inicio automático diferido, cuenta LocalService y recuperación ante fallos. El origen de atención utiliza Waitress en loopback 8005, salud de MariaDB y supervisión sin límite de dos horas. La administración sigue separada. La instalación es local: clonar el repositorio no crea servicios ni comparte credenciales.
+
+**Todavía no existe una URL permanente.** La cuenta consultada no tiene dominios ni túneles administrados. El origen estable está preparado, pero necesita un dominio real y un túnel administrado o un alojamiento con dirección propia. El Quick Tunnel anterior continúa siendo una demostración temporal.
+
+Para la presentación local, usar `Abrir_Revision_Estable.cmd`. Para revisar disponibilidad, `python scripts/attention_runtime.py status`. Documentación y pruebas: [ESTABILIDAD_Y_DESPLIEGUE.md](docs/ESTABILIDAD_Y_DESPLIEGUE.md). Los registros personales, volcados y evidencias permanecen exclusivamente en `.tools`, fuera de Git.
