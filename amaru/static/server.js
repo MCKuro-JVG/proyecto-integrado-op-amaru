@@ -4,7 +4,7 @@
 const screen=document.getElementById('screen'),page=document.body.dataset.page;
 const params=new URLSearchParams(location.search);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let session,csrf='',signature='',review=null;
+let session,csrf='',signature='',review=null,qrRefresh=null;
 const states=['Registrada','En fabricación','Control de calidad','Disponible para retiro'];
 const names={clientes:'Clientes',recetas:'Recetas ópticas',cotizaciones:'Cotizaciones',ordenes:'Pedidos y órdenes',recepcion:'Entrega de lentes',documentos:'Documentos',solicitudes:'Agendamientos y contactos',garantias:'Garantías y reparaciones',inventario:'Inventario'};
 const endpoints={clientes:'clients',recetas:'prescriptions',cotizaciones:'quotes',ordenes:'orders',recepcion:'orders',documentos:'receipts',solicitudes:'inquiries',garantias:'warranties',inventario:'inventory'};
@@ -25,7 +25,7 @@ const currency=v=>Number(v).toLocaleString('es-CL',{style:'currency',currency:'C
 const date=v=>v?new Date(v.length===10?v+'T12:00:00':v).toLocaleString('es-CL'):'—';
 function message(t){const n=document.querySelector('.toast');n.hidden=false;n.textContent=t;setTimeout(()=>n.hidden=true,6000);}
 function dialog(title,body){document.getElementById('dialog-title').textContent=title;document.getElementById('dialog-content').innerHTML=body;document.getElementById('app-dialog').showModal();}
-function close(){document.getElementById('app-dialog').close();}
+function close(){clearInterval(qrRefresh);qrRefresh=null;document.getElementById('app-dialog').close();}
 async function api(path,options={}){
  const headers={'Accept':'application/json','X-CSRFToken':csrf,...options.headers};
  if(options.body&&!(options.body instanceof FormData)){headers['Content-Type']='application/json';options.body=JSON.stringify(options.body);}
@@ -53,7 +53,7 @@ async function render(){
  }
  else if(page==='dashboard'){
  const results=await Promise.all(['clients/','orders/','receipts/','inquiries/'].map(p=>api(p).catch(()=>null)));
- screen.innerHTML=head('Resumen de atención','Información persistida en la base de datos del servidor.')+`<div class="stats dashboard-stats">${results.map((r,i)=>`<article class="stat"><div>${['Clientes','Órdenes de trabajo','Entregas registradas','Solicitudes de atención'][i]}</div><strong>${r?r.count:'Sin permiso'}</strong></article>`).join('')}</div>`+(results[1]?panel('Pedidos recientes',ordersTable(results[1].results)):note('No tienes acceso a las órdenes.'))+link('Bitácora','/auditoria/');
+ screen.innerHTML=head('Resumen de atención','Información persistida en la base de datos del servidor.')+`<div class="stats dashboard-stats">${results.map((r,i)=>`<article class="stat"><div>${['Clientes','Órdenes de trabajo','Entregas registradas','Solicitudes de atención'][i]}</div><strong>${r?r.count:'Sin permiso'}</strong></article>`).join('')}</div>`+(results[1]?panel('Pedidos recientes',ordersTable(results[1].results)):note('No tienes acceso a las órdenes.'))+link('Bitácora','/auditoria/')+(has('view_inquiry')?btn('Mostrar QR de atención','attention-qr')+link('Solicitudes recibidas','solicitudes.html'):'');
  }
  else if(page==='detalle_cliente'){
  const c=await api('clients/'+params.get('cliente')+'/');screen.innerHTML=head(c.name,c.rut)+panel('Ficha de cliente',`<p>${esc(c.phone)} · ${esc(c.email)}</p><p>${esc(c.category)} · Contacto posventa: ${c.consent?'Autorizado':'No autorizado'}</p><p>Estado: ${c.active?'Activo':'Inactivo'}</p>`+btn('Editar ficha','client-edit',c.id))+link('Clientes','clientes.html');
@@ -63,10 +63,37 @@ async function render(){
  else screen.innerHTML=head('Módulo no disponible');
  }catch(e){error(e);}finally{document.documentElement.dataset.amaruReady='true';}
 }
-function requestForm(){const kind=params.get('tipo')||'agenda';screen.innerHTML=head('Agendar / contactar','No necesitas una cuenta de cliente para dejar tu solicitud.')+form('inquiry',select('kind','Tipo de solicitud',[['agenda','Atención'],['contacto','Contacto'],['lentes','Orientación de lentes']],kind)+input('name','Nombre completo')+input('phone','Teléfono','tel','','required pattern="[+0-9 ()-]{8,30}"')+input('email','Correo','email')+input('service','Tipo de atención','text','Orientación de lentes')+input('day','Fecha solicitada','date','','min="'+new Date().toLocaleDateString('sv-SE')+'"')+select('slot','Horario académico',['09:00','10:00','11:00','15:00','16:00'])+area('reason','Motivo de consulta')+check('contact_authorized','Autorizo el contacto para gestionar esta solicitud.'),'Registrar solicitud')+note('Las fechas son solicitudes pendientes de revisión. No se envían correos ni mensajes automáticamente.');screen.querySelector('form').dataset.key=crypto.randomUUID();}
+function requestForm(){
+ const kind=params.get('tipo')||'agenda';
+ screen.innerHTML=head('Agendar / contactar','No necesitas una cuenta. Tu solicitud será revisada por el personal.')+
+ form('inquiry',select('kind','Tipo de solicitud',[['agenda','Atención'],['contacto','Contacto'],['lentes','Orientación de lentes'],['registro','Registro de cliente']],kind)+
+ input('name','Nombre completo','text','','required minlength="3" maxlength="180" autocomplete="name"')+
+ '<div id="registration-rut" hidden>'+input('registration_rut','RUT para registro','text','','maxlength="12" placeholder="12345678-5"')+'</div>'+
+ input('phone','Teléfono','tel','','required maxlength="30" autocomplete="tel"')+
+ input('email','Correo','email','','maxlength="254" autocomplete="email"')+
+ input('service','Tipo de atención','text','Orientación de lentes','required maxlength="120"')+
+ '<div id="appointment-day">'+input('day','Fecha solicitada','date','','min="'+new Date().toLocaleDateString('sv-SE')+'"')+'</div>'+
+ '<div id="appointment-slot">'+select('slot','Horario académico',['09:00','10:00','11:00','15:00','16:00'])+'</div>'+
+ area('reason','Motivo de consulta')+
+ '<div class="honeypot" aria-hidden="true"><label>Dejar vacío<input name="website" tabindex="-1" autocomplete="off"></label></div>'+
+ check('contact_authorized','Autorizo el contacto para gestionar esta solicitud.'),'Registrar solicitud')+
+ note('Las horas quedan sujetas a aprobación. El registro de cliente crea una ficha pendiente de revisión, sin cuenta de acceso. Esta autorización no permite promociones ni posventa.')+
+ (params.get('origen')==='qr'?note('Origen de esta solicitud: Código QR'):'');
+ const f=screen.querySelector('form');f.dataset.key=crypto.randomUUID();f.querySelector('[name=contact_authorized]').required=true;
+ const update=()=>{const k=f.elements.kind.value;for(const id of ['appointment-day','appointment-slot'])document.getElementById(id).hidden=k!=='agenda';f.elements.day.required=k==='agenda';document.getElementById('registration-rut').hidden=k!=='registro';f.elements.registration_rut.required=k==='registro';};
+ f.elements.kind.addEventListener('change',update);update();
+}
+async function showAttentionQR(){
+ clearInterval(qrRefresh);
+ const data=await api('attention-qr/');
+ dialog('Formulario de atención — Ópticas Amaru',`<div class="attention-qr"><p>Escanea el código con la cámara del celular y completa el formulario.</p>${data.warning?note(data.warning):''}${data.scannable?`<img id="attention-qr" src="/api/attention-qr/?image=png&t=${Date.now()}" alt="Código QR del formulario público de atención"><p class="qr-url">${esc(data.url)}</p><div class="actions">${btn('Copiar enlace','qr-copy',data.url)}${btn('Ampliar QR','qr-enlarge')}${link('Descargar QR','/api/attention-qr/?image=png&download=1')}${btn('Imprimir QR','qr-print')}</div>${data.staff_url?link('Solicitudes de la demostración',data.staff_url):''}`:''}</div>`);
+ qrRefresh=setInterval(async()=>{if(!document.getElementById('app-dialog').open||!document.querySelector('.attention-qr')){clearInterval(qrRefresh);return;}try{const next=await api('attention-qr/');if(next.url!==data.url)await showAttentionQR();}catch(e){message(e.message);}},10000);
+}
+function printAttentionQR(){const img=document.getElementById('attention-qr');if(!img)return;const win=window.open('about:blank','_blank');if(!win)throw new Error('Permite abrir la ventana de impresión.');win.document.write('<!doctype html><title>QR — Ópticas Amaru</title><style>body{font:20px sans-serif;text-align:center}img{width:440px;max-width:90%}p{overflow-wrap:anywhere}</style><h1>Formulario de atención — Ópticas Amaru</h1><p>Escanea para dejar tu solicitud</p><img alt="QR" src="'+img.src+'"><p>'+esc(document.querySelector('.qr-url').textContent)+'</p>');win.document.close();win.onload=()=>win.print();}
+
 function ordersTable(rows,own=false){return table(['Orden','Cliente','Producto','Estado','Acción'],rows.map(o=>[esc(o.folio),esc(o.client_name),esc(Object.values(o.characteristics).join(' · ')),badge(o.status),`<div class="actions">${o.status==='Disponible para retiro'?link('Revisar retiro','recepcion.html?pedido='+o.id):''}${!own&&o.status!=='Entregada'&&has('change_order')?btn('Actualizar','order-state',o.id):''}${o.status==='Entregada'?link('Documentos','documentos.html'):''}</div>`]));}
 async function modulePage(){
- const endpoint=endpoints[page],q=page==='clientes'&&params.get('q')?'?q='+encodeURIComponent(params.get('q')):'';
+ const endpoint=endpoints[page],q=page==='clientes'&&params.get('q')?'?q='+encodeURIComponent(params.get('q')):page==='solicitudes'?'?'+new URLSearchParams([...params].filter(([k])=>['status','day'].includes(k))):'';
  const data=await list(endpoint+'/'+q);let body='',action='';
  if(page==='clientes'){
  action=has('add_client')?btn('Registrar cliente','client-new'):'';
@@ -79,7 +106,11 @@ async function modulePage(){
  body=table(['Folio','Cliente','Monto','Estado','Acción'],data.results.map(q=>[esc(q.folio),esc(q.client),currency(q.amount),q.approved?'Aprobada':'Borrador',has('change_quote')?`<div class="actions">${btn('Editar / aprobar','quote-edit',q.id)}${q.approved&&has('add_order')?btn('Generar OT','convert',q.id):''}</div>`:'']));
  }else if(page==='ordenes'||page==='recepcion')body=ordersTable(data.results);
  else if(page==='documentos')body=table(['Documento','Orden','Cliente','Fecha','Acción'],data.results.map(d=>[esc(d.id),esc(d.order_folio),esc(d.client_name),date(d.created_at),btn('Ver documento / PDF','file','receipts/'+d.id+'/pdf/')]));
- else if(page==='solicitudes')body=table(['Solicitante','Contacto','Tipo / horario','Motivo','Estado','Acción'],data.results.map(r=>[esc(r.name),esc(r.phone)+'<br>'+esc(r.email),esc(r.kind)+'<br>'+esc(r.day||'')+' '+esc(r.slot||''),esc(r.reason),badge(r.status),has('change_inquiry')?btn('Revisar','inquiry-state',r.id):'']));
+ else if(page==='solicitudes'){
+ action=btn('Mostrar QR de atención','attention-qr')+btn('Actualizar solicitudes','reload');
+ body=form('inquiry-filter',select('status','Estado',[['','Todos'],...['Nueva','En revisión','Contactada','Cerrada','Cancelada']],params.get('status')||'')+input('day','Fecha de recepción','date',params.get('day')||'',''),'Filtrar')+
+ table(['ID / recepción','Solicitante','Tipo / origen','Estado','Acción'],data.results.map(r=>[esc(r.id)+'<br>'+date(r.created_at),esc(r.name),esc(r.kind)+'<br>'+esc(r.source==='qr'?'Código QR':'Sitio web'),badge(r.status),btn('Ver detalle','inquiry-detail',r.id)+(has('change_inquiry')?btn('Revisar estado','inquiry-state',r.id):'')]));
+ }
  else if(page==='garantias'){
  action=has('add_warranty')?btn('Registrar solicitud','warranty-new'):'';
  body=table(['Folio','Orden','Tipo','Motivo','Estado','Acción'],data.results.map(w=>[esc(w.folio),esc(w.order),esc(w.kind),esc(w.reason),badge(w.status),has('change_warranty')?btn('Revisar','warranty-edit',w.id):'']));
@@ -119,7 +150,8 @@ document.addEventListener('submit',async e=>{
  try{switch(f.dataset.form){
  case 'login':{const r=await api('login/',{method:'POST',body:data});csrf=r.csrf;location.reload();return;}
  case 'search':location.href='clientes.html?q='+encodeURIComponent(data.q);return;
- case 'inquiry':data.contact_authorized=!!data.contact_authorized;data.idempotency_key=f.dataset.key;data.day=data.day||null;data.slot=data.slot||null;{const r=await api('inquiries/',{method:'POST',body:data});screen.innerHTML=head('Solicitud registrada')+note(r.detail)+`<p>Referencia: ${esc(r.reference)}</p>`+link('Volver al inicio','index.html');return;}
+ case 'inquiry-filter':location.href='solicitudes.html?'+new URLSearchParams(data);return;
+ case 'inquiry':data.source=params.get('origen')==='qr'?'qr':'web';if(data.kind!=='registro')delete data.registration_rut;data.contact_authorized=!!data.contact_authorized;data.idempotency_key=f.dataset.key;data.day=data.day||null;data.slot=data.slot||null;{const r=await api('inquiries/',{method:'POST',body:data});screen.innerHTML=head('Solicitud registrada')+note(r.detail)+`<p>Referencia: ${esc(r.reference)}</p>`+link('Volver al inicio','index.html');return;}
  case 'client':{const id=data.id;delete data.id;data.consent=!!data.consent;data.active=data.active==='true';data.agreement=data.agreement||null;await api('clients/'+(id?id+'/':''),{method:id?'PATCH':'POST',body:data});break;}
  case 'recipe':await api('prescriptions/',{method:'POST',body:new FormData(f)});break;
  case 'quote':{const id=data.id;delete data.id;data.approved=!!data.approved;data.agreement=data.agreement||null;data.prescription=data.prescription||null;data.characteristics=data.product_type==='particular'?{frame:data.frame,crystal:data.crystal,focus:data.focus}:{security_model:data.frame,security_color:data.crystal,focus:data.focus};delete data.frame;delete data.crystal;delete data.focus;await api('quotes/'+(id?id+'/':''),{method:id?'PATCH':'POST',body:data});break;}
@@ -133,6 +165,11 @@ document.addEventListener('submit',async e=>{
 });
 document.addEventListener('click',async e=>{const b=e.target.closest('[data-op]');if(!b)return;const id=b.dataset.id;try{switch(b.dataset.op){
  case 'reload':location.reload();break;
+ case 'attention-qr':await showAttentionQR();break;
+ case 'qr-copy':await navigator.clipboard.writeText(id);message('Enlace copiado.');break;
+ case 'qr-enlarge':document.querySelector('.attention-qr').classList.toggle('enlarged');break;
+ case 'qr-print':printAttentionQR();break;
+ case 'inquiry-detail':{const r=await api('inquiries/'+id+'/');dialog('Solicitud #'+r.id,`<dl><dt>Solicitante</dt><dd>${esc(r.name)}</dd><dt>Contacto</dt><dd>${esc(r.phone)} · ${esc(r.email||'No informado')}</dd><dt>Tipo y origen</dt><dd>${esc(r.kind)} · ${esc(r.source==='qr'?'Código QR':'Sitio web')}</dd><dt>Recepción</dt><dd>${date(r.created_at)}</dd><dt>Atención solicitada</dt><dd>${esc(r.service)} · ${esc(r.day||'')} ${esc(r.slot||'')}</dd><dt>Motivo y observaciones</dt><dd>${esc(r.reason)}</dd><dt>Estado</dt><dd>${esc(r.status)}</dd></dl>${r.client?link('Revisar ficha asociada','detalle_cliente.html?cliente='+r.client):''}`);break;}
  case 'logout':await api('logout/',{method:'POST',body:{}});location.href='index.html';break;
  case 'client-new':await clientForm();break;
  case 'client-edit':await clientForm(id);break;
@@ -150,6 +187,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('[data-op]'
  case 'settings':{const c=await api('configuration/');dialog('Condiciones configurables',form('settings',area('warranty_terms','Condiciones de garantía',c.warranty_terms)));break;}
  }}catch(err){message(err.message);}});
 document.querySelector('[data-close-dialog]')?.addEventListener('click',close);
+if(page==='dashboard'&&params.get('qr')==='1')document.addEventListener('amaru-rendered',()=>{if(has('view_inquiry'))showAttentionQR().catch(e=>message(e.message));},{once:true});
 document.querySelector('[data-menu]')?.addEventListener('click',e=>{const open=document.querySelector('.sidebar').classList.toggle('open');e.currentTarget.setAttribute('aria-expanded',String(open));});
 document.querySelector('[data-public-menu]')?.addEventListener('click',e=>{const open=document.getElementById('public-nav').classList.toggle('open');e.currentTarget.setAttribute('aria-expanded',String(open));});
 (async()=>{try{
@@ -163,6 +201,6 @@ document.querySelector('[data-public-menu]')?.addEventListener('click',e=>{const
  }
  const top=document.querySelector('.topbar')||document.querySelector('.public-header');
  if(session.authenticated)top?.insertAdjacentHTML('beforeend',btn('Cerrar sesión','logout'));
- document.querySelectorAll('.demo-tag').forEach(n=>n.textContent='DATOS DEL SERVIDOR');await render();
+ document.querySelectorAll('.demo-tag').forEach(n=>n.textContent='DATOS DEL SERVIDOR');await render();document.dispatchEvent(new Event('amaru-rendered'));
 }catch(e){error(e);}})();
 })();

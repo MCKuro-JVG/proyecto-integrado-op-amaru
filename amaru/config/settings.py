@@ -73,3 +73,8 @@ SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', str(not DEBUG)).lower() =
 SECURE_HSTS_SECONDS = 0 if DEBUG else 31536000
 SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
 SECURE_HSTS_PRELOAD = not DEBUG
+
+# Una sola fuente para QR local, temporal o dominio estable; nunca contiene secretos.
+ATTENTION_PUBLIC_BASE_URL = os.getenv('ATTENTION_PUBLIC_BASE_URL', '')
+ATTENTION_URL_FILE = os.getenv('ATTENTION_URL_FILE', str(BASE_DIR.parent / '.tools/attention/public-url.json'))
+ATTENTION_RATE_LIMIT = 15

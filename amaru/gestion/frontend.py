@@ -10,7 +10,7 @@ def interface(request,page='index.html'):
     if not re.fullmatch(r'[a-z_]+\.html',page) or not path.is_file(): raise Http404
     html=path.read_text(encoding='utf-8')
     html=re.sub(r'<script src="js/(?:storage|app)\.js[^\"]*" defer></script>','',html)
-    html=html.replace('</head>','<script src="/static/server.js?v=backend1" defer></script></head>')
+    html=html.replace('</head>','<link rel="stylesheet" href="/static/attention.css">'+'<script src="/static/server.js?v=attention1" defer></script></head>')
     html=re.sub(r'(href|src)="((?:css|img|js)/)',r'\1="/static/interfaz/\2',html)
     html=re.sub(r'<div class="demo-banner">.*?</div>','<div class="demo-banner">APLICACIÓN ACADÉMICA · Datos en el servidor · Sin envíos de correo o mensajes · Use datos ficticios</div>',html)
     html=html.replace('Personal · DEMO ↗','Acceso del personal ↗')

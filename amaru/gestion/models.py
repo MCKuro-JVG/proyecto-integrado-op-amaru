@@ -179,10 +179,13 @@ class QuoteLine(models.Model):
 
 
 class Inquiry(models.Model):
-    TYPES=[('agenda','Solicitud de atención'),('contacto','Contacto'),('lentes','Orientación de lentes')]
+    TYPES=[('agenda','Solicitud de atención'),('contacto','Contacto'),('lentes','Orientación de lentes'),('registro','Registro de cliente')]
     STATES=[(s,s) for s in ['Nueva','En revisión','Contactada','Cerrada','Cancelada']]
     token=models.UUIDField(default=uuid.uuid4,unique=True,editable=False)
     idempotency_key=models.UUIDField(unique=True)
+    source=models.CharField(max_length=10,choices=[('web','Sitio web'),('qr','Código QR')],default='web')
+    registration_rut=models.CharField(max_length=12,blank=True)
+    client=models.ForeignKey(Client,on_delete=models.PROTECT,null=True,blank=True,related_name='inquiries')
     kind=models.CharField(max_length=20,choices=TYPES)
     name=models.CharField(max_length=180)
     phone=models.CharField(max_length=30)

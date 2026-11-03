@@ -113,23 +113,32 @@ class WarrantySerializer(serializers.ModelSerializer):
 
 
 class InquirySerializer(serializers.ModelSerializer):
+    website=serializers.CharField(required=False,allow_blank=True,write_only=True,max_length=200)
     class Meta:
         model=Inquiry
-        fields=['id','token','idempotency_key','kind','name','phone','email','service','reason','contact_authorized','day','slot','status','created_at']
-        read_only_fields=['token','status','created_at']
-        extra_kwargs={'idempotency_key':{'validators':[]}}
+        fields=['id','token','idempotency_key','kind','name','phone','email','service','reason','contact_authorized','day','slot','status','created_at','source','registration_rut','client','website']
+        read_only_fields=['token','status','created_at','client']
+        extra_kwargs={'idempotency_key':{'validators':[]},'email':{'required':False,'allow_blank':True},'reason':{'trim_whitespace':True}}
     def validate(self,data):
+        if data.pop('website',''): raise serializers.ValidationError('No se pudo registrar la solicitud.')
         if data['kind']=='agenda':
             if not data.get('day') or not data.get('slot'): raise serializers.ValidationError('Seleccione fecha y horario.')
             if data['day']<timezone.localdate(): raise serializers.ValidationError('La fecha no puede ser pasada.')
-            if data['slot'].strftime('%H:%M') not in ('09:00','10:00','11:00','15:00','16:00'):
+            if data['slot'].second or data['slot'].microsecond or data['slot'].strftime('%H:%M') not in ('09:00','10:00','11:00','15:00','16:00'):
                 raise serializers.ValidationError('Horario fuera de la agenda académica.')
         else: data.update(day=None,slot=None)
         if len(data['name'].strip())<3 or len(data['reason'].strip())<5:
             raise serializers.ValidationError('Complete nombre y motivo de la consulta.')
         import re
-        if not re.fullmatch(r'[+0-9 ()-]{8,30}',data['phone']): raise serializers.ValidationError('Teléfono inválido.')
+        phone=data['phone']
+        if not re.fullmatch(r'\+?[0-9 ()-]{8,29}',phone) or not 8<=len(re.sub(r'\D','',phone))<=15:
+            raise serializers.ValidationError('Teléfono inválido: utilice entre 8 y 15 dígitos.')
         if not data.get('contact_authorized'): raise serializers.ValidationError('Debe autorizar el contacto para gestionar esta solicitud.')
+        rut=data.get('registration_rut','')
+        if data['kind']=='registro':
+            try: data['registration_rut']=normalize_rut(rut)
+            except Exception as exc: raise serializers.ValidationError({'registration_rut':'RUT inválido.'}) from exc
+        elif rut: raise serializers.ValidationError({'registration_rut':'El RUT solo corresponde al registro de cliente.'})
         return data
 
 

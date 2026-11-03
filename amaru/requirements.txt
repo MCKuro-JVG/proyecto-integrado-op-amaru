@@ -9,3 +9,5 @@ djangorestframework==3.16.1
 mysqlclient==2.2.7
 django-storages==1.14.6
 boto3==1.43.118
+
+waitress==3.0.2

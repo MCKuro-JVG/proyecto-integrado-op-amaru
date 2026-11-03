@@ -82,3 +82,6 @@ frontend_amaru/PUBLICACION_ACTUAL.md
 .cloudflare/
 
 node_modules/
+
+# Consultas de esquema de demostracion sin datos ni credenciales
+!docs/consultas_demostracion_qr.sql

@@ -186,21 +186,32 @@ class Inquiries(viewsets.GenericViewSet):
     permission_classes=[ModelAccess]
     def get_permissions(self):
         return [permissions.AllowAny()] if self.action=='create' else super().get_permissions()
+    def get_queryset(self):
+        qs=self.queryset.select_related('client').order_by('-created_at')
+        state=self.request.query_params.get('status','')
+        day=self.request.query_params.get('day','')
+        if state: qs=qs.filter(status=state)
+        if day:
+            from datetime import date
+            try: parsed=date.fromisoformat(day)
+            except ValueError: raise ValidationError('Fecha de filtro inválida.')
+            qs=qs.filter(created_at__date=parsed)
+        return qs
     def list(self,request):
-        rows=self.paginate_queryset(self.queryset.order_by('-created_at'))
+        rows=self.paginate_queryset(self.get_queryset())
         return self.get_paginated_response(self.get_serializer(rows,many=True).data)
+    def retrieve(self,request,pk=None):
+        return Response(self.get_serializer(self.get_object()).data)
     @method_decorator(csrf_protect)
     def create(self,request):
+        from .attention import check_submission_rate
+        from .services import receive_inquiry
+        check_submission_rate(request)
         s=self.get_serializer(data=request.data);s.is_valid(raise_exception=True)
-        data=s.validated_data
         try:
-            with transaction.atomic():
-                obj,created=Inquiry.objects.get_or_create(idempotency_key=data['idempotency_key'],defaults=data)
-                if created:
-                    if obj.kind=='agenda': AppointmentReservation.objects.create(inquiry=obj,day=obj.day,slot=obj.slot)
-                    audit(request.user,'Solicitud pública recibida',obj)
-        except IntegrityError: return Response({'detail':'Ese horario ya tiene una solicitud. Seleccione otro.'},status=409)
-        # No devolver contactos existentes a quien adivine/reutilice un identificador.
+            obj,created=receive_inquiry(s.validated_data,request.user)
+        except IntegrityError:
+            return Response({'detail':'Ese horario ya tiene una solicitud. Seleccione otro.'},status=409)
         return Response({'reference':str(obj.token),'created':created,'detail':'Solicitud registrada para revisión; no confirma una atención ni envía mensajes.'},status=201 if created else 200)
     def partial_update(self,request,pk=None):
         with transaction.atomic():

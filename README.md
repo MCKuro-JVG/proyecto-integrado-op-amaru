@@ -2,7 +2,7 @@
 
 Aplicación académica para atención óptica. Evolución del backend `amaru/gestion` y de las interfaces HTML, CSS y JavaScript existentes; no es un proyecto independiente.
 
-**Estado:** aplicación local Django + MariaDB con Cloudflare R2 activado y verificado el 26 de octubre de 2026. Las recetas, firmas y PDF se guardan en `amaru-privado`; las imágenes del catálogo utilizan `amaru-publico`. Se comprobaron 59 pruebas automatizadas sobre MariaDB y 35 verificaciones de interfaz en Chrome. Consulte [la conexión y las pruebas de R2](docs/CLOUDFLARE_R2.md). El repositorio conserva el historial y el frontend original. Las credenciales y los medios no se publican.
+**Estado:** aplicación local Django + MariaDB con Cloudflare R2 activado y verificado el 26 de octubre de 2026. Las recetas, firmas y PDF se guardan en `amaru-privado`; las imágenes del catálogo utilizan `amaru-publico`. La etapa QR verificó 80 pruebas automatizadas sobre MariaDB, 21 pruebas específicas de atención y recorridos de interfaz en Chrome. Consulte [la conexión y las pruebas de R2](docs/CLOUDFLARE_R2.md). El repositorio conserva el historial y el frontend original. Las credenciales y los medios no se publican.
 
 ## Tecnologías y estructura
 
@@ -196,3 +196,12 @@ git credential-manager github login --username MCKuro-JVG --device --no-ui
 El comando genera un código temporal para introducir en <https://github.com/login/device>. El propietario aprueba la aplicación en su navegador; las credenciales quedan en el almacén del sistema. No guardar tokens en el repositorio ni en la URL de `origin`. Antes de publicar, ejecutar `git fetch origin` y revisar el estado remoto; utilizar únicamente push normal. Cada integrante debe autorizar su propia cuenta con permisos concedidos por el propietario.
 
 La organización y verificación de la ubicación principal se documentan en [FINALIZACION.md](docs/FINALIZACION.md).
+
+
+## Atención mediante QR
+
+El panel Resumen y Solicitudes recibidas incluyen **Mostrar QR de atención**. El formulario público existente permite contacto, solicitud de hora, orientación o registro de cliente. Las entradas llegan a MariaDB; el registro de cliente crea una ficha inactiva hasta revisión, sin cuenta autenticada ni autorización de promociones. Un RUT existente nunca se actualiza silenciosamente desde el formulario público.
+
+En el equipo de demostración, ejecutar `Iniciar_Atencion_QR.cmd`: prepara los servicios y abre las herramientas disponibles. La URL temporal se obtiene con `cf tunnels quick-start` y se actualiza centralmente; nunca se genera un QR con localhost. `Detener_Atencion_QR.cmd` cierra el acceso público. El túnel también se cierra automáticamente a las dos horas.
+
+La demostración remota usa **otra base**, `opticas_amaru_qr_demo`, y un panel privado accesible solo desde `http://127.0.0.1:8003/app/solicitudes.html`. La base habitual `opticas_amaru` permanece en el puerto 8001. No se copian datos reales hacia el entorno expuesto. Véase [ATENCION_QR.md](docs/ATENCION_QR.md) para la configuración, el alcance, las pruebas y los pasos de presentación.

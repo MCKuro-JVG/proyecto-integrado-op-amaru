@@ -99,3 +99,35 @@ def _accept_receipt_atomic(order_id,user,accepted,signature,attempt,terms,expect
     receipt.sha256=hashlib.sha256(buffer.getvalue()).hexdigest();receipt.save()
     order.status='Entregada';order.save();audit(user,'Recepción conforme · Entregada',order);audit(user,'Comprobante generado',receipt)
     return receipt
+
+
+@transaction.atomic
+def receive_inquiry(data,actor):
+    """Entrada pública: no cambia fichas existentes ni crea cuentas de usuario."""
+    from datetime import timedelta
+    from rest_framework.exceptions import APIException
+    class Conflict(APIException):
+        status_code=409
+    previous=Inquiry.objects.filter(idempotency_key=data['idempotency_key']).first()
+    if previous:
+        for key,value in data.items():
+            if getattr(previous,key)!=value:
+                raise Conflict('La referencia de envío ya fue utilizada con otros datos. Recargue el formulario.')
+        return previous,False
+    fields={key:data.get(key,'') for key in ('kind','name','phone','email','service','reason','registration_rut')}
+    fields.update(day=data.get('day'),slot=data.get('slot'))
+    if Inquiry.objects.filter(**fields,created_at__gte=timezone.now()-timedelta(minutes=5)).exclude(status__in=['Cerrada','Cancelada']).exists():
+        raise Conflict('Ya se recibió una solicitud equivalente recientemente. Espere antes de repetirla.')
+    obj,created=Inquiry.objects.get_or_create(idempotency_key=data['idempotency_key'],defaults=data)
+    if not created:
+        if any(getattr(obj,key)!=value for key,value in data.items()):
+            raise Conflict('La referencia de envío ya fue utilizada con otros datos. Recargue el formulario.')
+        return obj,False
+    if obj.kind=='registro':
+        client,new=Client.objects.get_or_create(rut=obj.registration_rut,defaults={
+            'name':obj.name,'phone':obj.phone,'email':obj.email,'category':'particular','consent':False,'active':False})
+        obj.client=client;obj.save(update_fields=['client'])
+        if new: audit(actor,'Ficha pública pendiente de revisión; sin cuenta autenticada',client)
+    if obj.kind=='agenda': AppointmentReservation.objects.create(inquiry=obj,day=obj.day,slot=obj.slot)
+    audit(actor,'Solicitud pública recibida: '+obj.source,obj)
+    return obj,True
