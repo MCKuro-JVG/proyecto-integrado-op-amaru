@@ -25,7 +25,7 @@
   },true);
   window.addEventListener('unhandledrejection',()=>showError('No se completó una operación de la interfaz.'));
   document.addEventListener('click',e=>{if(e.target.closest('[data-boot-retry]'))location.reload();});
-  const check=()=>{if(document.documentElement.dataset.amaruReady!=='true')showError('Los recursos de la página no coinciden o no terminaron de cargar.');};
+  const check=()=>{if(document.documentElement.dataset.amaruReady!=='true'&&!document.documentElement.dataset.amaruStarting)showError('Los recursos de la página no coinciden o no terminaron de cargar.');};
   // Todos los módulos son defer: al llegar DOMContentLoaded ya deben haber
   // renderizado. No depender de temporizadores que Chrome limita en pestañas de fondo.
   document.addEventListener('DOMContentLoaded',check,{once:true});

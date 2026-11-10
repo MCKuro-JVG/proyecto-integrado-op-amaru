@@ -1,5 +1,6 @@
 /* Cliente del backend: sesión Django, CSRF y MariaDB. No almacena datos personales en el navegador. */
 'use strict';
+document.documentElement.dataset.amaruStarting='true';
 (() => {
 const screen=document.getElementById('screen'),page=document.body.dataset.page;
 const params=new URLSearchParams(location.search);
@@ -326,5 +327,5 @@ document.querySelector('[data-public-menu]')?.addEventListener('click',e=>{const
  const top=document.querySelector('.topbar')||document.querySelector('.public-header');
  if(session.authenticated)top?.insertAdjacentHTML('beforeend',btn('Cerrar sesión','logout'));
  document.querySelectorAll('.demo-tag').forEach(n=>n.textContent='DATOS DEL SERVIDOR');await render();document.dispatchEvent(new Event('amaru-rendered'));
-}catch(e){error(e);}})();
+}catch(e){error(e);}finally{delete document.documentElement.dataset.amaruStarting;document.documentElement.dataset.amaruReady='true';}})();
 })();
