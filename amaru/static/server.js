@@ -5,7 +5,7 @@ document.documentElement.dataset.amaruStarting='true';
 const screen=document.getElementById('screen'),page=document.body.dataset.page;
 const params=new URLSearchParams(location.search);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let session,csrf='',signature='',review=null,qrRefresh=null;
+let session,csrf='',signature='',review=null,qrRefresh=null,refreshAppointmentCalendar;
 const states=['Registrada','En fabricación','Control de calidad','Disponible para retiro'];
 const names={clientes:'Clientes',recetas:'Recetas ópticas',cotizaciones:'Cotizaciones',ordenes:'Pedidos y órdenes',recepcion:'Entrega de lentes',documentos:'Documentos',solicitudes:'Agendamientos y contactos',garantias:'Garantías y reparaciones',inventario:'Inventario'};
 const endpoints={clientes:'clients',recetas:'prescriptions',cotizaciones:'quotes',ordenes:'orders',recepcion:'orders',documentos:'receipts',solicitudes:'inquiries',garantias:'warranties',inventario:'inventory'};
@@ -266,40 +266,135 @@ async function requestForm(){
  input('phone','Teléfono','tel','','required maxlength="30" autocomplete="tel"')+
  input('email','Correo','email','','maxlength="254" autocomplete="email"')+
  input('service','Tipo de atención','text','Orientación de lentes','required maxlength="120"')+
- '<div id="appointment-day">'+select('day','Fecha disponible',[['','Seleccione una fecha']])+'</div>'+
- '<div id="appointment-slot">'+select('slot','Hora en Chile',[['','Seleccione una fecha']])+'</div>'+
+ '<section id="appointment-calendar" class="appointment-calendar" aria-labelledby="appointment-title" hidden>'+
+ '<h2 id="appointment-title">Elige una fecha y hora</h2>'+
+ '<input type="hidden" name="day"><input type="hidden" name="slot">'+
+ '<div data-calendar-content></div><p data-calendar-feedback role="status"></p></section>'+
  area('reason','Motivo de consulta')+
  '<div class="honeypot" aria-hidden="true"><label>Dejar vacío<input name="website" tabindex="-1" autocomplete="off"></label></div>'+
  check('contact_authorized','Autorizo el contacto para gestionar esta solicitud.'),'Registrar solicitud')+
  note('Las horas quedan sujetas a aprobación. El registro de cliente crea una ficha pendiente de revisión, sin cuenta de acceso. Esta autorización no permite promociones ni posventa.')+
  (params.get('origen')==='qr'?note('Origen de esta solicitud: Código QR'):'');
  const f=screen.querySelector('form');f.dataset.key=crypto.randomUUID();f.querySelector('[name=contact_authorized]').required=true;
+ const calendar=f.querySelector('#appointment-calendar');
+ refreshAppointmentCalendar=mountAppointmentCalendar(f,calendar);
  const update=()=>{
   const kind=f.elements.kind.value;
   const appointment=kind==='agenda';
-  for(const id of ['appointment-day','appointment-slot'])document.getElementById(id).hidden=!appointment;
-  for(const name of ['day','slot'])f.elements[name].required=appointment;
+  calendar.hidden=!appointment;
+  for(const name of ['day','slot'])f.elements[name].disabled=!appointment;
   document.getElementById('registration-rut').hidden=kind!=='registro';
   f.elements.registration_rut.required=kind==='registro';
   document.getElementById('agreement-fields').hidden=kind!=='registro';
   f.elements.agreement_role.required=kind==='registro'&&!!f.elements.agreement_code.value.trim();
  };
- f.elements.kind.addEventListener('change',update);
+ f.elements.kind.addEventListener('change',()=>{update();if(!calendar.hidden)refreshAppointmentCalendar();});
  f.elements.agreement_code.addEventListener('input',update);
  update();
- await loadAvailability(f);
+ if(!calendar.hidden)await refreshAppointmentCalendar();
 }
-async function loadAvailability(form){
+function mountAppointmentCalendar(form,calendar){
+ const content=calendar.querySelector('[data-calendar-content]');
+ const feedback=calendar.querySelector('[data-calendar-feedback]');
  const day=form.elements.day,slot=form.elements.slot;
- const selectedDay=day.value;
- const {days}=await api('agenda/');
- day.replaceChildren(new Option(days.length?'Seleccione una fecha':'Sin fechas disponibles',''),...days.map(row=>new Option(row.day,row.day)));
- if(days.some(row=>row.day===selectedDay))day.value=selectedDay;
- day.onchange=()=>{
-  const choices=days.find(row=>row.day===day.value)?.slots||[];
-  slot.replaceChildren(new Option('Seleccione una hora',''),...choices.map(hour=>new Option(hour,hour)));
- };
- day.onchange();
+ const weekdays=['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+ const monthLabel=new Intl.DateTimeFormat('es-CL',{month:'long',year:'numeric',timeZone:'UTC'});
+ const dayLabel=new Intl.DateTimeFormat('es-CL',{dateStyle:'full',timeZone:'UTC'});
+ const dateOf=value=>new Date(value+'T00:00:00Z');
+ const monthOf=value=>value.slice(0,7);
+ let dates=new Map(),months=[],month,loading=false;
+
+ function render(focus){
+  const first=dateOf(month+'-01');
+  const label=monthLabel.format(first);
+  const padding=(first.getUTCDay()+6)%7;
+  const last=new Date(Date.UTC(first.getUTCFullYear(),first.getUTCMonth()+1,0)).getUTCDate();
+  const currentMonth=months.indexOf(month);
+  const cells=Array.from({length:Math.ceil((padding+last)/7)*7},(_,index)=>{
+   const number=index-padding+1;
+   if(number<1||number>last)return '<td></td>';
+   const value=month+'-'+String(number).padStart(2,'0');
+   const hours=dates.get(value)||[];
+   const available=hours.some(hour=>hour.status==='available');
+   const state=available?'Hay horas disponibles':hours.length?'Sin horas disponibles':'Fuera de agenda';
+   return `<td><button type="button" class="appointment-day ${available?'has-hours':''}" data-day="${value}"
+    aria-label="${esc(dayLabel.format(dateOf(value))+' · '+state)}" aria-pressed="${day.value===value}"
+    ${!hours.length?'disabled':''}>${number}</button></td>`;
+  });
+  const weeks=[];
+  for(let index=0;index<cells.length;index+=7)weeks.push('<tr>'+cells.slice(index,index+7).join('')+'</tr>');
+  const hours=dates.get(day.value)||[];
+  const hourLabels={available:'Disponible',occupied:'Ocupada',blocked:'No disponible'};
+  const hourButtons=hours.map(({time,status})=>`<button type="button" data-hour="${esc(time)}"
+   class="appointment-hour ${status==='available'?'':'is-unavailable'}"
+   aria-pressed="${slot.value===time}" ${status==='available'?'':'disabled'}>
+   <strong>${esc(time)}</strong><span>${hourLabels[status]}</span></button>`).join('');
+  content.innerHTML=`<div class="appointment-layout">
+   <div class="appointment-month">
+    <div class="appointment-month-header">
+     <button type="button" data-month-step="-1" aria-label="Mes anterior" ${currentMonth===0?'disabled':''}>‹</button>
+     <h3 tabindex="-1" data-month-title>${esc(label)}</h3>
+     <button type="button" data-month-step="1" aria-label="Mes siguiente" ${currentMonth===months.length-1?'disabled':''}>›</button>
+    </div>
+    <table class="appointment-grid" aria-label="${esc(label)}">
+     <thead><tr>${weekdays.map(name=>`<th scope="col"><abbr title="${name}">${name.slice(0,2)}</abbr></th>`).join('')}</tr></thead>
+     <tbody>${weeks.join('')}</tbody>
+    </table>
+   </div>
+   <div class="appointment-hours">
+    <h3>${day.value?esc(dayLabel.format(dateOf(day.value))):'Horarios en Chile'}</h3>
+    <div class="appointment-hours-grid">${hourButtons}</div>
+    ${!day.value?'<p>Selecciona un día para ver sus horarios.</p>':''}
+    <p class="appointment-legend">Los horarios en gris están ocupados o bloqueados.</p>
+   </div>
+  </div>`;
+  if(focus)content.querySelector(focus)?.focus();
+ }
+
+ calendar.addEventListener('click',event=>{
+  const button=event.target.closest('button');
+  if(!button||button.disabled||loading)return;
+  const {day:date,hour,monthStep,calendarRetry}=button.dataset;
+  if(monthStep){
+   month=months[months.indexOf(month)+Number(monthStep)];
+   render('[data-month-title]');
+  }else if(date){
+   if(day.value!==date)slot.value='';
+   day.value=date;
+   feedback.textContent='';
+   render(`[data-day="${date}"]`);
+  }else if(hour&&dates.get(day.value)?.some(row=>row.time===hour&&row.status==='available')){
+   slot.value=hour;
+   feedback.textContent='Horario seleccionado: '+hour+' del '+dayLabel.format(dateOf(day.value))+'.';
+   render(`[data-hour="${hour}"]`);
+  }else if(calendarRetry!==undefined){
+   refresh();
+  }
+ });
+
+ async function refresh(){
+  if(loading)return;
+  loading=true;
+  feedback.textContent='Cargando horarios…';
+  try{
+   const {calendar:rows}=await api('agenda/');
+   dates=new Map(rows.map(row=>[row.day,row.slots]));
+   months=[...new Set(rows.map(row=>monthOf(row.day)))];
+   month=months.includes(month)?month:months[0];
+   const selected=dates.get(day.value);
+   if(!selected?.length)day.value='';
+   if(!selected?.some(row=>row.time===slot.value&&row.status==='available'))slot.value='';
+   feedback.textContent='';
+   render();
+  }catch{
+   day.value=slot.value='';
+   content.innerHTML='<button type="button" class="button soft" data-calendar-retry>Reintentar</button>';
+   feedback.textContent='No pudimos cargar los horarios. Vuelve a intentarlo.';
+  }finally{
+   loading=false;
+  }
+ }
+ return refresh;
 }
 async function showAttentionQR(){
  clearInterval(qrRefresh);
@@ -385,7 +480,13 @@ document.addEventListener('change',async e=>{
 });
 document.addEventListener('submit',async e=>{
  const f=e.target;if(!f.dataset.form)return;e.preventDefault();if(!f.reportValidity())return;
- const data=Object.fromEntries(new FormData(f)),submit=f.querySelector('[type=submit]');submit.disabled=true;
+ const data=Object.fromEntries(new FormData(f)),submit=f.querySelector('[type=submit]');
+ if(f.dataset.form==='inquiry'&&data.kind==='agenda'&&(!data.day||!data.slot)){
+  f.querySelector('[data-calendar-feedback]').textContent='Selecciona un día y un horario disponible.';
+  f.querySelector('#appointment-title').scrollIntoView({block:'nearest'});
+  return;
+ }
+ submit.disabled=true;
  try{switch(f.dataset.form){
  case 'membership-start':location.href='formulario_remoto.html?registro_convenio=1&convenio='+encodeURIComponent(data.code.trim());return;
  case 'membership-status':{const result=await api('membership/status/',{method:'POST',body:data});f.querySelector('.form-feedback').textContent='Estado: '+result.state;return;}
@@ -424,7 +525,7 @@ document.addEventListener('submit',async e=>{
  }close();await render();message('Operación guardada en el servidor.');
  }catch(err){
   if(f.dataset.form==='inquiry'&&data.kind==='agenda'&&err.status===409){
-   try{await loadAvailability(f);}catch{/* Se conserva el mensaje del envío. */}
+   await refreshAppointmentCalendar();
   }
   if(f.dataset.form==='register'&&err.status===400){
    try{f.elements.challenge.value=(await api('register/')).challenge;}catch{/* Conserva la explicación del error original. */}

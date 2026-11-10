@@ -41,15 +41,25 @@ def availability(request):
         for day, slot in AppointmentReservation.objects.filter(day__range=(today, end)).values_list("day", "slot")
     }
     days = []
+    calendar = []
     for offset in range(30):
         day = today + timedelta(days=offset)
-        slots = [] if (day, "") in blocked else [
-            slot for slot in hours.get(str(day.weekday()), [])
-            if (day, slot) not in blocked and (day, slot) not in occupied
-        ]
-        if slots:
-            days.append({"day": day.isoformat(), "slots": slots})
-    response = Response({"days": days, "timezone": "America/Santiago"})
+        date = day.isoformat()
+        all_day_blocked = (day, "") in blocked
+        slots = []
+        for slot in hours.get(str(day.weekday()), []):
+            if (day, slot) in occupied:
+                status = "occupied"
+            elif all_day_blocked or (day, slot) in blocked:
+                status = "blocked"
+            else:
+                status = "available"
+            slots.append({"time": slot, "status": status})
+        available = [slot["time"] for slot in slots if slot["status"] == "available"]
+        if available:
+            days.append({"day": date, "slots": available})
+        calendar.append({"day": date, "slots": slots})
+    response = Response({"days": days, "calendar": calendar, "timezone": "America/Santiago"})
     response["Cache-Control"] = "no-store"
     return response
 

@@ -57,6 +57,31 @@ class AgendaTests(TestCase):
         self.assertEqual(self.slots(), [])
         self.assertEqual(self.book().status_code, 409)
 
+    def test_public_calendar_includes_occupied_and_blocked_hours_without_reservation_details(self):
+        SiteConfiguration.objects.update_or_create(
+            pk=1, defaults={"agenda_hours": {str(self.day.weekday()): ["10:00", "11:00", "12:00"]}}
+        )
+        self.assertEqual(self.book().status_code, 201)
+        self.client.force_login(self.worker)
+        self.assertEqual(self.block("11:00").status_code, 200)
+        self.client.logout()
+
+        response = self.client.get("/api/agenda/")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data["calendar"]), 30)
+        date = self.day.isoformat()
+        self.assertEqual(next(row for row in data["calendar"] if row["day"] == date), {
+            "day": date,
+            "slots": [
+                {"time": "10:00", "status": "occupied"},
+                {"time": "11:00", "status": "blocked"},
+                {"time": "12:00", "status": "available"},
+            ],
+        })
+        self.assertEqual(next(row["slots"] for row in data["days"] if row["day"] == date), ["12:00"])
+        self.assertNotContains(response, "Persona ficticia")
+
     def test_cancel_preserves_history_and_releases_slot(self):
         self.assertEqual(self.book().status_code, 201)
         self.assertNotIn("10:00", self.slots())
