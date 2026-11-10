@@ -87,7 +87,9 @@ def _accept_receipt_atomic(order_id,user,accepted,signature,attempt,terms,expect
         receipt.signature.save(Path(attempt.signature_key).name,ContentFile(content))
         if receipt.signature.name!=attempt.signature_key:raise ValidationError('Colisión de archivo; reintente la entrega.')
     buffer=BytesIO();styles=getSampleStyleSheet()
-    story=[Paragraph('Ópticas Amaru',styles['Title']),Paragraph('Comprobante de recepción conforme',styles['Heading2']),Spacer(1,18)]
+    logo = settings.BASE_DIR.parent / 'frontend_amaru' / 'img' / 'logo-amaru-oficial.jpg'
+    title = PDFImage(str(logo), width=142, height=142*488/948) if logo.is_file() else Paragraph('Ópticas Amaru', styles['Title'])
+    story = [title, Paragraph('Comprobante de recepción conforme', styles['Heading2']), Spacer(1, 18)]
     lines=[f'Orden: {order.folio}',f'Cliente: {order.client.name}',f'RUT: {order.client.rut}',f'Producto: {order.get_product_type_display()}',* [f'{k}: {v}' for k,v in order.characteristics_display],f'Fecha: {timezone.localtime(receipt.created_at).strftime("%d/%m/%Y %H:%M:%S")}',f'Método de aceptación: {receipt.method}']
     for line in lines: story += [Paragraph(escape(line),styles['BodyText']),Spacer(1,8)]
     story += [Paragraph('Condiciones de garantía aceptadas',styles['Heading2']),Paragraph(escape(receipt.terms).replace('\n','<br/>'),styles['BodyText'])]
@@ -114,11 +116,21 @@ def receive_inquiry(data,actor):
             if getattr(previous,key)!=value:
                 raise Conflict('La referencia de envío ya fue utilizada con otros datos. Recargue el formulario.')
         return previous,False
+    if data['kind'] == 'agenda':
+        from .agenda import AgendaConflict, is_open, lock_agenda
+        if not is_open(lock_agenda(), data['day'], data['slot']):
+            raise AgendaConflict()
     fields={key:data.get(key,'') for key in ('kind','name','phone','email','service','reason','registration_rut')}
-    fields.update(day=data.get('day'),slot=data.get('slot'))
+    fields.update(day=data.get('day'),slot=data.get('slot'),agreement=data.get('agreement'))
     if Inquiry.objects.filter(**fields,created_at__gte=timezone.now()-timedelta(minutes=5)).exclude(status__in=['Cerrada','Cancelada']).exists():
         raise Conflict('Ya se recibió una solicitud equivalente recientemente. Espere antes de repetirla.')
-    obj,created=Inquiry.objects.get_or_create(idempotency_key=data['idempotency_key'],defaults=data)
+    defaults = dict(data)
+    if data.get("agreement"):
+        agreement = Agreement.objects.select_for_update().get(pk=data["agreement"].pk)
+        if not agreement.available or (data.get("agreement_role") == "carga" and not agreement.allow_dependents):
+            raise Conflict("El convenio ya no está disponible para este registro.")
+        defaults["verification_state"] = "pendiente"
+    obj,created=Inquiry.objects.get_or_create(idempotency_key=data['idempotency_key'],defaults=defaults)
     if not created:
         if any(getattr(obj,key)!=value for key,value in data.items()):
             raise Conflict('La referencia de envío ya fue utilizada con otros datos. Recargue el formulario.')

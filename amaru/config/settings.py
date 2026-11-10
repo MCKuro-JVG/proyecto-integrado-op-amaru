@@ -78,3 +78,8 @@ SECURE_HSTS_PRELOAD = not DEBUG
 ATTENTION_PUBLIC_BASE_URL = os.getenv('ATTENTION_PUBLIC_BASE_URL', '')
 ATTENTION_URL_FILE = os.getenv('ATTENTION_URL_FILE', str(BASE_DIR.parent / '.tools/attention/public-url.json'))
 ATTENTION_RATE_LIMIT = 15
+
+# Vacío conserva el año calendario hasta que Ópticas Amaru confirme su política.
+PRESCRIPTION_VALIDITY_DAYS = int(os.environ["PRESCRIPTION_VALIDITY_DAYS"]) if os.getenv("PRESCRIPTION_VALIDITY_DAYS") else None
+if PRESCRIPTION_VALIDITY_DAYS is not None and not 1 <= PRESCRIPTION_VALIDITY_DAYS <= 3650:
+    raise ValueError("PRESCRIPTION_VALIDITY_DAYS debe estar entre 1 y 3650.")

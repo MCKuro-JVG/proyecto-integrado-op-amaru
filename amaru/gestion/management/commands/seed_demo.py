@@ -42,7 +42,7 @@ class Command(BaseCommand):
             ('DEMO-PARTICULAR','DEMO · Lentes particulares','armazon','Referencia académica de armazón y lentes ópticos; sin disponibilidad comercial confirmada.'),
             ('DEMO-SEGURIDAD','DEMO · Lentes de seguridad','seguridad','Referencia académica para orientación de lentes de seguridad.'),
             ('DEMO-CRISTAL','DEMO · Cristales','cristal','Referencia académica de cristales monofocales o multifocales.')]:
-            Product.objects.get_or_create(sku=sku,defaults={'name':name,'category':category,'description':description})
+            Product.objects.get_or_create(sku=sku,defaults={'name':name,'category':category,'description':description,'requires_prescription':category=='cristal'})
         SiteConfiguration.objects.get_or_create(pk=1)
         if not Quote.objects.filter(client=c).exists():
             quote=Quote.objects.create(client=c,prescription=c.prescriptions.order_by('-issued_on').first(),category='particular',product_type='seguridad',characteristics={'security_model':'DEMO Seguridad','security_color':'blanco','focus':'monofocal'},amount=30000,approved=True,notes='DEMO · Cotización de prueba académica, valor ficticio.',actor=actor)

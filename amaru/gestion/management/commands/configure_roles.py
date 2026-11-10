@@ -11,8 +11,8 @@ class Command(BaseCommand):
                 'client':['view','add','change'],'prescription':['view','add'],
                 'quote':['view','add','change'],'order':['view','add','change'],
                 'warranty':['view','add','change'],'receipt':['view','add'],
-                'inquiry':['view','change'],'inventory':['view','change'],
-                'agreement':['view'],'request':['view','add','change']},
+                'inquiry':['view','change'],'agendablock':['view','add','change'],'inventory':['view','change'],
+                'agreement':['view'],'product':['view','add','change'],'request':['view','add','change']},
             'Taller':{'order':['view','change'],'warranty':['view','change'],'inventory':['view']},
             'Cliente':{},
         }

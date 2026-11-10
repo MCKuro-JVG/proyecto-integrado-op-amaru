@@ -8,9 +8,31 @@ from .storage import private_storage, public_storage
 def document_path(instance,filename):
     return f'recetas/{instance.client_id}/{uuid.uuid4().hex}{Path(filename).suffix.lower()}'
 class Agreement(models.Model):
-    name=models.CharField('empresa / sindicato',max_length=180,unique=True)
-    active=models.BooleanField('activo',default=True)
-    def __str__(self): return self.name
+    name = models.CharField('empresa / sindicato', max_length=180, unique=True)
+    active = models.BooleanField('activo', default=True)
+    code = models.CharField(max_length=24, unique=True, null=True, blank=True, editable=False)
+    starts_on = models.DateField(null=True, blank=True)
+    ends_on = models.DateField(null=True, blank=True)
+    contact_name = models.CharField(max_length=180, blank=True)
+    contact_email = models.EmailField(blank=True)
+    allow_dependents = models.BooleanField(default=False)
+
+    @property
+    def available(self):
+        today = timezone.localdate()
+        return self.active and (not self.starts_on or self.starts_on <= today) and (not self.ends_on or self.ends_on >= today)
+
+    def save(self, *args, **kwargs):
+        if not self.code:
+            self.code = uuid.uuid4().hex[:16]
+            if kwargs.get("update_fields") is not None:
+                kwargs["update_fields"] = set(kwargs["update_fields"]) | {"code"}
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.name
+
+
 class Client(models.Model):
     CATEGORY=[('particular','Particular'),('convenio','Convenio Empresa/Sindicato')]
     rut=models.CharField('RUT',max_length=12,unique=True,validators=[validate_rut])
@@ -44,6 +66,10 @@ class Prescription(models.Model):
     physical_reference=models.CharField('referencia de archivo físico (si corresponde)',max_length=180,blank=True)
     @property
     def expires_on(self):
+        validity_days = getattr(settings, "PRESCRIPTION_VALIDITY_DAYS", None)
+        if validity_days is not None:
+            from datetime import timedelta
+            return self.issued_on + timedelta(days=validity_days)
         d=self.issued_on
         return d.replace(year=d.year+1,day=min(d.day,calendar.monthrange(d.year+1,d.month)[1]))
     @property
@@ -134,8 +160,46 @@ class Receipt(models.Model):
     created_at=models.DateTimeField(auto_now_add=True)
     actor=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True)
     def __str__(self): return f'Recepción · {self.order.folio}'
+def default_agenda_hours():
+    """Horario académico inicial. Cada día usa el índice de date.weekday()."""
+    return {str(day): ["09:00", "10:00", "11:00", "15:00", "16:00"] for day in range(7)}
+
+
+def validate_agenda_hours(value):
+    from django.core.exceptions import ValidationError
+    from datetime import time
+
+    if not isinstance(value, dict):
+        raise ValidationError("Indica los días de la semana y sus horarios.")
+    for day, hours in value.items():
+        if day not in {str(index) for index in range(7)} or not isinstance(hours, list):
+            raise ValidationError("Usa índices 0 a 6 y listas de horas HH:MM.")
+        if any(not isinstance(hour, str) for hour in hours) or len(hours) != len(set(hours)):
+            raise ValidationError("Usa horas de texto sin duplicados.")
+        for hour in hours:
+            try:
+                parsed = time.fromisoformat(hour)
+            except ValueError as exc:
+                raise ValidationError("Usa horas HH:MM válidas.") from exc
+            if parsed.strftime("%H:%M") != hour:
+                raise ValidationError("Usa horas HH:MM válidas.")
+
+
 class SiteConfiguration(models.Model):
     warranty_terms=models.TextField('condiciones de garantía',default='DEMO ACADÉMICO: Las condiciones comerciales, plazos y exclusiones de garantía deben ser confirmados por Ópticas Amaru. Este comprobante registra la recepción del producto. Las solicitudes de garantía se ingresan para evaluación del taller. No se establece una cobertura comercial definitiva en este prototipo.')
+    agenda_hours = models.JSONField(default=default_agenda_hours, validators=[validate_agenda_hours])
+
+
+class AgendaBlock(models.Model):
+    day = models.DateField()
+    slot = models.CharField(max_length=5, blank=True, default="")
+    active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["day", "slot"]
+        constraints = [models.UniqueConstraint(fields=["day", "slot"], name="agenda_block_unique")]
+
+
 class Audit(models.Model):
     actor=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True)
     action=models.CharField(max_length=200)
@@ -161,6 +225,9 @@ class Product(models.Model):
     crystal=models.CharField(max_length=100,blank=True)
     treatments=models.CharField(max_length=200,blank=True)
     color=models.CharField(max_length=80,blank=True)
+    lens_type = models.CharField(max_length=80, blank=True)
+    reference_price = models.PositiveIntegerField(null=True, blank=True)
+    requires_prescription = models.BooleanField(default=False)
     image=models.ImageField(upload_to=public_image_path,storage=public_storage,blank=True,validators=[validate_document])
     active=models.BooleanField(default=True)
     created_at=models.DateTimeField(auto_now_add=True)
@@ -186,6 +253,15 @@ class Inquiry(models.Model):
     source=models.CharField(max_length=10,choices=[('web','Sitio web'),('qr','Código QR')],default='web')
     registration_rut=models.CharField(max_length=12,blank=True)
     client=models.ForeignKey(Client,on_delete=models.PROTECT,null=True,blank=True,related_name='inquiries')
+    product = models.ForeignKey(Product, on_delete=models.PROTECT, null=True, blank=True)
+    prescription = models.ForeignKey(Prescription, on_delete=models.PROTECT, null=True, blank=True)
+    agreement = models.ForeignKey(Agreement, on_delete=models.PROTECT, null=True, blank=True)
+    agreement_role = models.CharField(max_length=10, choices=[("titular", "Titular"), ("carga", "Carga familiar")], blank=True)
+    verification_state = models.CharField(max_length=12, choices=[("pendiente", "Pendiente"), ("aprobada", "Aprobada"), ("rechazada", "Rechazada")], blank=True)
+    verification_method = models.CharField(max_length=12, blank=True)
+    verification_note = models.CharField(max_length=500, blank=True)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    verified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="verified_agreements")
     kind=models.CharField(max_length=20,choices=TYPES)
     name=models.CharField(max_length=180)
     phone=models.CharField(max_length=30)

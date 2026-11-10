@@ -214,3 +214,7 @@ En el equipo de revisión se instalaron, con autorización, `OpticasAmaruDatabas
 **Todavía no existe una URL permanente.** La cuenta consultada no tiene dominios ni túneles administrados. El origen estable está preparado, pero necesita un dominio real y un túnel administrado o un alojamiento con dirección propia. El Quick Tunnel anterior continúa siendo una demostración temporal.
 
 Para la presentación local, usar `Abrir_Revision_Estable.cmd`. Para revisar disponibilidad, `python scripts/attention_runtime.py status`. Documentación y pruebas: [ESTABILIDAD_Y_DESPLIEGUE.md](docs/ESTABILIDAD_Y_DESPLIEGUE.md). Los registros personales, volcados y evidencias permanecen exclusivamente en `.tools`, fuera de Git.
+
+## Demostración académica en alwaysdata
+
+Ver [preparación de WSGI, MariaDB y HTTPS](deploy/alwaysdata/README.md). El perfil usa una base nueva y está destinado a datos ficticios.

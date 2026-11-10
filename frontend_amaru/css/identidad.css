@@ -1,0 +1,34 @@
+/* Paleta académica para revisión con Óptica Amaru. La fotografía del logo conserva sus colores. */
+:root {
+  --amaru-salmon: #ff7e70;
+  --amaru-ink: #191617;
+  --amaru-accent: #922d30;
+  --amaru-tint: #fff1ef;
+  --amaru-border: #e9ceca;
+  --orange: var(--amaru-accent);
+  --line: var(--amaru-border);
+}
+body[data-experience="public"] { background: #fffafa; }
+.brand .official-logo {
+  display: block;
+  width: clamp(112px, 14vw, 154px);
+  height: auto;
+  border-radius: 5px;
+}
+.sidebar .brand { align-self: stretch; }
+.sidebar, .hero, .staff-intro { background: var(--amaru-ink); }
+.sidebar .nav-heading, .sidebar-note, .staff-intro .eyebrow, .hero p { color: #ffe5e1; }
+.sidebar .nav-link.active, .public-nav a.current, .button.primary {
+  color: var(--amaru-ink);
+  background: var(--amaru-salmon);
+  border-color: var(--amaru-salmon);
+  box-shadow: none;
+}
+.button.primary:hover, .public-nav a.current:hover { background: #ff9b90; color: var(--amaru-ink); }
+.topbar, .public-header, .panel-head, .dashboard-stats .stat, .quick-card, .boot-message {
+  border-color: var(--amaru-salmon);
+}
+.panel-head, .button.soft, .qr-url, .choice, .kanban-col { background: var(--amaru-tint); }
+.panel-head h2, .dashboard-stats .stat strong, .eyebrow, .timeline strong { color: var(--amaru-accent); }
+.hero .button.soft { background: var(--amaru-tint); color: var(--amaru-ink); }
+:focus-visible { outline: 3px solid var(--amaru-accent); outline-offset: 3px; }

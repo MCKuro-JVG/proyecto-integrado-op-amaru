@@ -31,11 +31,12 @@ async function api(path,options={}){
  if(options.body&&!(options.body instanceof FormData)){headers['Content-Type']='application/json';options.body=JSON.stringify(options.body);}
  const r=await fetch('/api/'+path,{...options,headers,credentials:'same-origin'});
  const body=r.headers.get('content-type')?.includes('json')?await r.json():null;
- if(!r.ok)throw new Error(body?Object.entries(body).map(([k,v])=>(k==='detail'?'':k+': ')+(Array.isArray(v)?v.join(' '):typeof v==='object'?JSON.stringify(v):v)).join(' '):'El servidor no pudo completar la operación ('+r.status+').');
+ if(!r.ok){const failure=new Error(body?Object.entries(body).map(([k,v])=>(k==='detail'?'':k+': ')+(Array.isArray(v)?v.join(' '):typeof v==='object'?JSON.stringify(v):v)).join(' '):'El servidor no pudo completar la operación ('+r.status+').');failure.status=r.status;throw failure;}
  return body;
 }
 async function list(path){return api(path+(path.includes('?')?'&':'?')+'page='+(params.get('pagina')||1));}
-function pages(result){return `<p>${esc(result.count)} registros · Página ${esc(params.get('pagina')||1)}</p><div class="actions">${result.previous?link('← Anterior',location.pathname+'?pagina='+(Number(params.get('pagina')||1)-1)):''}${result.next?link('Siguiente →',location.pathname+'?pagina='+(Number(params.get('pagina')||1)+1)):''}</div>`;}
+function paginationURL(number){const query=new URLSearchParams(params);query.set('pagina',number);return location.pathname+'?'+query;}
+function pages(result){return `<p>${esc(result.count)} registros · Página ${esc(params.get('pagina')||1)}</p><div class="actions">${result.previous?link('← Anterior',paginationURL(Number(params.get('pagina')||1)-1)):''}${result.next?link('Siguiente →',paginationURL(Number(params.get('pagina')||1)+1)):''}</div>`;}
 function loginForm(){screen.innerHTML=head('Acceso a Ópticas Amaru','Inicia sesión con una cuenta creada por el administrador. No se utilizan perfiles ficticios como mecanismo de acceso.')+panel('Autenticación',form('login',input('username','Usuario o correo','text','','required autocomplete="username"')+input('password','Contraseña','password','','required autocomplete="current-password"'),'Iniciar sesión'));}
 function error(e){screen.innerHTML=head('No se pudo cargar esta sección')+note(e.message)+btn('Reintentar','reload');}
 async function render(){
@@ -44,44 +45,134 @@ async function render(){
  if(!publicPages.includes(page)&&!session.authenticated){loginForm();return;}
  if(!publicPages.includes(page)&&!['consulta','recepcion','documentos'].includes(page)&&!session.permissions.some(p=>p.startsWith('gestion.view_'))){screen.innerHTML=head('Acceso restringido')+link('Ir a mis pedidos','consulta.html');return;}
  if(page==='index'){screen.innerHTML=head('Una mirada clara. Una atención más cerca.','Conoce la propuesta de Ópticas Amaru y solicita orientación.')+`<section class="hero"><div><h2>Tu atención, conectada.</h2><p>Desde la primera consulta hasta el retiro de tus lentes.</p><div class="actions">${link('Solicitar atención','formulario_remoto.html')}${link('Productos y servicios','catalogo.html')}${link('Mis pedidos','consulta.html')}</div></div><img src="/static/interfaz/img/atencion_optica.svg" alt="Atención óptica" style="max-width:100%;width:400px"></section>`+note('Catálogo académico y horarios de referencia. Las solicitudes quedan registradas para revisión, sin envío automático de correos.');}
- else if(page==='catalogo'){
- const data=await list('products/');screen.innerHTML=head('Productos y servicios','Catálogo académico. La disponibilidad comercial debe confirmarse con la óptica.')+`<div class="cards">${data.results.map(p=>panel(p.name,`<img src="${esc(p.image_url||'/static/interfaz/img/atencion_optica.svg')}" alt="${p.image_url?esc(p.name):'Ilustración académica de atención óptica'}" style="width:100%;max-height:220px;object-fit:contain">`+`<p>${esc(p.description)}</p><p>${esc(p.crystal)} · ${esc(p.color)}</p>`+link('Consultar','formulario_remoto.html?tipo=contacto'))).join('')}</div>`+pages(data)+panel('Servicios','<p>Orientación de lentes, ajustes y revisión de taller, atención en terreno sujeta a evaluación.</p>'+link('Solicitar información','formulario_remoto.html'));
- }
- else if(page==='formulario_remoto')requestForm();
+ else if(page==='catalogo')await renderCatalog();
+ else if(page==='convenios')await renderAgreements();
+ else if(page==='formulario_remoto')await requestForm();
  else if(page==='consulta'){
  const data=await list('orders/');screen.innerHTML=head('Mis pedidos','El servidor limita los registros a tu cuenta autenticada.')+ordersTable(data.results,true)+pages(data);
  }
  else if(page==='dashboard'){
  const results=await Promise.all(['clients/','orders/','receipts/','inquiries/'].map(p=>api(p).catch(()=>null)));
- screen.innerHTML=head('Resumen de atención','Información persistida en la base de datos del servidor.')+`<div class="stats dashboard-stats">${results.map((r,i)=>`<article class="stat"><div>${['Clientes','Órdenes de trabajo','Entregas registradas','Solicitudes de atención'][i]}</div><strong>${r?r.count:'Sin permiso'}</strong></article>`).join('')}</div>`+(results[1]?panel('Pedidos recientes',ordersTable(results[1].results)):note('No tienes acceso a las órdenes.'))+link('Bitácora','/auditoria/')+(has('view_inquiry')?btn('Mostrar QR de atención','attention-qr')+link('Solicitudes recibidas','solicitudes.html'):'');
+ screen.innerHTML=head('Resumen de atención','Información persistida en la base de datos del servidor.')+`<div class="stats dashboard-stats">${results.map((r,i)=>`<article class="stat"><div>${['Clientes','Órdenes de trabajo','Entregas registradas','Solicitudes de atención'][i]}</div><strong>${r?r.count:'Sin permiso'}</strong></article>`).join('')}</div>`+(results[1]?panel('Pedidos recientes',ordersTable(results[1].results)):note('No tienes acceso a las órdenes.'))+link('Bitácora','/auditoria/')+(has('view_agreement')?link('Gestión de convenios','convenios.html'):'')+(has('view_product')?link('Administración de catálogo','catalogo.html?gestion=1'):'')+(has('view_inquiry')?btn('Mostrar QR de atención','attention-qr')+link('Solicitudes recibidas','solicitudes.html'):'');
  }
  else if(page==='detalle_cliente'){
- const c=await api('clients/'+params.get('cliente')+'/');screen.innerHTML=head(c.name,c.rut)+panel('Ficha de cliente',`<p>${esc(c.phone)} · ${esc(c.email)}</p><p>${esc(c.category)} · Contacto posventa: ${c.consent?'Autorizado':'No autorizado'}</p><p>Estado: ${c.active?'Activo':'Inactivo'}</p>`+btn('Editar ficha','client-edit',c.id))+link('Clientes','clientes.html');
+ const c=await api('clients/'+params.get('cliente')+'/');screen.innerHTML=head(c.name,c.rut)+panel('Ficha de cliente',`<p>${esc(c.phone)} · ${esc(c.email)}</p><p>${esc(c.category)} · Contacto posventa: ${c.consent?'Autorizado':'No autorizado'}</p><p>Estado: ${c.active?'Activo':'Inactivo'}</p>`+btn('Editar ficha','client-edit',c.id)) +link('Clientes','clientes.html');
+  if(has('view_agreement')){const a=await api('clients/'+c.id+'/agreement/');screen.innerHTML+=panel('Atención por convenio',note(a.agreement?`${a.agreement} · ${a.available?'Vigente':'Fuera de vigencia'} · ${a.verified?(a.role==='carga'?'Carga validada':'Titular validado'):'Sin validación registrada'}`:'Sin convenio asociado.')+(a.pending?note('Tiene una solicitud de pertenencia pendiente.'):'')+(has('view_inquiry')?link('Revisar solicitudes','solicitudes.html'):'')+(has('add_request')?btn('Registrar atención presencial','agreement-visit',c.id):''));}
  }
  else if(page==='recepcion'&&params.get('pedido'))await delivery();
  else if(endpoints[page])await modulePage();
  else screen.innerHTML=head('Módulo no disponible');
  }catch(e){error(e);}finally{document.documentElement.dataset.amaruReady='true';}
 }
-function requestForm(){
- const kind=params.get('tipo')||'agenda';
+const categories=[['seguridad','Armazones de seguridad'],['armazon','Armazones particulares'],['cristal','Cristales'],['repuesto','Repuestos']];
+async function renderCatalog(){
+ const manage=params.get('gestion')==='1'&&has('view_product');
+ const query=new URLSearchParams([...params].filter(([key])=>['q','category'].includes(key)));
+ const data=await list((manage?'catalog-management/':'products/')+'?'+query);
+ const filters=form('catalog-filter',input('q','Buscar por nombre o código','search',params.get('q')||'','')+
+   select('category','Categoría',[['','Todas'],...categories],params.get('category')||''),'Buscar');
+ const navigation=manage?link('Vista pública','catalogo.html'):has('view_product')?link('Administrar catálogo','catalogo.html?gestion=1'):'';
+ const create=manage&&has('add_product')?btn('Nuevo producto','product-new'):'';
+ const cards=data.results.map(p=>panel(p.name,
+  `<img src="${esc(p.active&&p.image_url?p.image_url:'/static/interfaz/img/atencion_optica.svg')}" alt="${esc(p.name)}" style="width:100%;max-height:220px;object-fit:contain">
+  <p>${esc(p.description)}</p><dl><dt>Categoría</dt><dd>${esc(categories.find(([value])=>value===p.category)?.[1]||p.category)}</dd>
+  <dt>Tipo, cristal y color</dt><dd>${esc([p.lens_type,p.crystal,p.color].filter(Boolean).join(' · ')||'Por definir')}</dd>
+  <dt>Tratamientos</dt><dd>${esc(p.treatments||'Por definir')}</dd></dl>
+  ${p.reference_price!==null?`<p>Referencia académica: ${currency(p.reference_price)}</p>`:''}
+  <p>${p.active?'Visible en el catálogo':'Producto desactivado'}</p>`+
+  (manage?(has('change_product')?btn('Editar producto','product-edit',p.id):''):link('Consultar','formulario_remoto.html?tipo=contacto')+btn('Solicitar producto','request-product',p.id))));
+ screen.innerHTML=head(manage?'Administración de catálogo':'Productos y servicios','Catálogo académico con productos de prueba.')+
+  navigation+create+filters+`<div class="cards">${cards.join('')||note('No se encontraron productos.')}</div>`+pages(data);
+}
+async function productRequestForm(id){
+ if(!session.authenticated){
+  dialog('Solicitar producto',note('Inicia sesión con tu cuenta de cliente para registrar una solicitud de producto.')+link('Iniciar sesión','consulta.html')+link('Consultar sin cuenta','formulario_remoto.html?tipo=lentes'));
+  return;
+ }
+ const [product,recipes]=await Promise.all([api('products/'+id+'/'),api('my-prescriptions/')]);
+ dialog('Solicitar '+product.name,
+  (product.requires_prescription?note('Este producto requiere una receta vigente. Puedes usar una guardada o cargar un archivo privado.'): '')+
+  form('request-product',`<input name="product" type="hidden" value="${esc(id)}">`+
+   select('prescription','Receta vigente',[['','Sin receta seleccionada'],...recipes.map(p=>[p.id,'Receta del '+p.issued_on])])+
+   area('reason','Indica lo que necesitas')+check('contact_authorized','Autorizo el contacto para gestionar mi solicitud.'),'Enviar solicitud')+
+  '<details><summary>Cargar receta</summary>'+form('own-prescription',`<input name="product" type="hidden" value="${esc(id)}">`+
+   input('issued_on','Fecha de emisión','date')+input('file','Foto o PDF privado','file','','required accept=".png,.jpg,.jpeg,.pdf"'),'Cargar receta')+'</details>');
+ document.querySelector('[data-form="request-product"]').dataset.key=crypto.randomUUID();
+}
+async function productForm(id){
+ const p=id?await api('catalog-management/'+id+'/'):{};
+ dialog(id?'Editar producto':'Nuevo producto',form('product',
+  `<input type="hidden" name="id" value="${esc(id||'')}">`+input('sku','Código SKU','text',p.sku)+
+  input('name','Nombre','text',p.name)+select('category','Categoría',categories,p.category)+area('description','Descripción',p.description)+
+  input('lens_type','Tipo de lente','text',p.lens_type,'')+input('crystal','Cristal','text',p.crystal,'')+
+  input('treatments','Tratamientos','text',p.treatments,'')+input('color','Color','text',p.color,'')+
+  input('reference_price','Precio ficticio CLP','number',p.reference_price??'','min="0" step="1"')+
+  input('image','Imagen JPG o PNG','file','','accept="image/jpeg,image/png"')+
+  select('active','Visibilidad',[['true','Activo'],['false','Desactivado']],String(p.active??true))+
+  select('requires_prescription','Receta',[['false','No exige receta'],['true','Exige receta vigente']],String(p.requires_prescription??false))));
+}
+async function renderAgreements(){
+ const result=await list('agreements/');
+ const rows=result.results.map(a=>[esc(a.name),esc(a.code||'Guardar para generar'),a.available?'Vigente':'Inactivo o fuera de vigencia',
+  (has('change_agreement')?btn('Editar','agreement-edit',a.id):'')+(a.available&&a.code?btn('Mostrar QR','agreement-qr',a.id):'')]);
+ screen.innerHTML=head('Gestión de convenios','El código identifica al convenio. La pertenencia requiere revisión del personal.')+
+  (has('add_agreement')?btn('Nuevo convenio','agreement-new'):'')+link('Solicitudes recibidas','solicitudes.html')+
+  panel('Convenios',table(['Organización','Código','Estado','Acciones'],rows))+pages(result);
+}
+async function agreementForm(id){
+ const a=id?await api('agreements/'+id+'/'):{};
+ dialog(id?'Editar convenio':'Nuevo convenio',form('agreement',
+  `<input name="id" type="hidden" value="${esc(id||'')}">`+input('name','Organización','text',a.name)+
+  input('starts_on','Inicio','date',a.starts_on,'')+input('ends_on','Término','date',a.ends_on,'')+
+  input('contact_name','Responsable','text',a.contact_name,'')+input('contact_email','Correo de contacto','email',a.contact_email,'')+
+  select('allow_dependents','Cargas familiares',[['false','No admitidas'],['true','Admitidas']],String(a.allow_dependents??false))+
+  select('active','Estado',[['true','Activo'],['false','Inactivo']],String(a.active??true))));
+}
+async function requestForm(){
+ const code=params.get('convenio')||'';
+ const kind=code?'registro':params.get('tipo')||'agenda';
  screen.innerHTML=head('Agendar / contactar','No necesitas una cuenta. Tu solicitud será revisada por el personal.')+
  form('inquiry',select('kind','Tipo de solicitud',[['agenda','Atención'],['contacto','Contacto'],['lentes','Orientación de lentes'],['registro','Registro de cliente']],kind)+
  input('name','Nombre completo','text','','required minlength="3" maxlength="180" autocomplete="name"')+
  '<div id="registration-rut" hidden>'+input('registration_rut','RUT para registro','text','','maxlength="12" placeholder="12345678-5"')+'</div>'+
+ '<div id="agreement-fields" hidden>'+input('agreement_code','Código de convenio (opcional)','text',code,'maxlength="24"')+select('agreement_role','Calidad',[['','No aplica'],['titular','Titular'],['carga','Carga familiar, si el convenio la permite']],'')+'</div>'+
  input('phone','Teléfono','tel','','required maxlength="30" autocomplete="tel"')+
  input('email','Correo','email','','maxlength="254" autocomplete="email"')+
  input('service','Tipo de atención','text','Orientación de lentes','required maxlength="120"')+
- '<div id="appointment-day">'+input('day','Fecha solicitada','date','','min="'+new Date().toLocaleDateString('sv-SE')+'"')+'</div>'+
- '<div id="appointment-slot">'+select('slot','Horario académico',['09:00','10:00','11:00','15:00','16:00'])+'</div>'+
+ '<div id="appointment-day">'+select('day','Fecha disponible',[['','Seleccione una fecha']])+'</div>'+
+ '<div id="appointment-slot">'+select('slot','Hora en Chile',[['','Seleccione una fecha']])+'</div>'+
  area('reason','Motivo de consulta')+
  '<div class="honeypot" aria-hidden="true"><label>Dejar vacío<input name="website" tabindex="-1" autocomplete="off"></label></div>'+
  check('contact_authorized','Autorizo el contacto para gestionar esta solicitud.'),'Registrar solicitud')+
  note('Las horas quedan sujetas a aprobación. El registro de cliente crea una ficha pendiente de revisión, sin cuenta de acceso. Esta autorización no permite promociones ni posventa.')+
  (params.get('origen')==='qr'?note('Origen de esta solicitud: Código QR'):'');
  const f=screen.querySelector('form');f.dataset.key=crypto.randomUUID();f.querySelector('[name=contact_authorized]').required=true;
- const update=()=>{const k=f.elements.kind.value;for(const id of ['appointment-day','appointment-slot'])document.getElementById(id).hidden=k!=='agenda';f.elements.day.required=k==='agenda';document.getElementById('registration-rut').hidden=k!=='registro';f.elements.registration_rut.required=k==='registro';};
- f.elements.kind.addEventListener('change',update);update();
+ const update=()=>{
+  const kind=f.elements.kind.value;
+  const appointment=kind==='agenda';
+  for(const id of ['appointment-day','appointment-slot'])document.getElementById(id).hidden=!appointment;
+  for(const name of ['day','slot'])f.elements[name].required=appointment;
+  document.getElementById('registration-rut').hidden=kind!=='registro';
+  f.elements.registration_rut.required=kind==='registro';
+  document.getElementById('agreement-fields').hidden=kind!=='registro';
+  f.elements.agreement_role.required=kind==='registro'&&!!f.elements.agreement_code.value.trim();
+ };
+ f.elements.kind.addEventListener('change',update);
+ f.elements.agreement_code.addEventListener('input',update);
+ update();
+ await loadAvailability(f);
+}
+async function loadAvailability(form){
+ const day=form.elements.day,slot=form.elements.slot;
+ const selectedDay=day.value;
+ const {days}=await api('agenda/');
+ day.replaceChildren(new Option(days.length?'Seleccione una fecha':'Sin fechas disponibles',''),...days.map(row=>new Option(row.day,row.day)));
+ if(days.some(row=>row.day===selectedDay))day.value=selectedDay;
+ day.onchange=()=>{
+  const choices=days.find(row=>row.day===day.value)?.slots||[];
+  slot.replaceChildren(new Option('Seleccione una hora',''),...choices.map(hour=>new Option(hour,hour)));
+ };
+ day.onchange();
 }
 async function showAttentionQR(){
  clearInterval(qrRefresh);
@@ -116,7 +207,19 @@ async function modulePage(){
  body=table(['Folio','Orden','Tipo','Motivo','Estado','Acción'],data.results.map(w=>[esc(w.folio),esc(w.order),esc(w.kind),esc(w.reason),badge(w.status),has('change_warranty')?btn('Revisar','warranty-edit',w.id):'']));
  }else if(page==='inventario')body=table(['Artículo','Categoría','Cantidad','Acción'],data.results.map(i=>[esc(i.name),esc(i.category),esc(i.quantity),has('change_inventory')?btn('Actualizar cantidad','inventory-edit',i.id):'']));
  screen.innerHTML=head(names[page],'Registros del servidor. Se aplican permisos en cada operación.')+action+panel(names[page],body)+pages(data);
+ if(page==='solicitudes'&&has('view_agendablock'))await renderAgendaBlocks();
  if(page==='documentos'&&has('change_siteconfiguration'))screen.innerHTML+=btn('Configurar garantía','settings');
+}
+async function renderAgendaBlocks(){
+ const rows=await api('agenda/blocks/');
+ const editable=has('add_agendablock')&&has('change_agendablock');
+ const dateFields=input('block_day','Fecha a bloquear','date')+input('slot','Hora opcional (vacío bloquea todo el día)','time','','');
+ const controls=editable?form('agenda-block',dateFields,'Bloquear') : '';
+ const history=table(['Fecha','Hora','Estado','Acción'],rows.map(row=>[
+  esc(row.day),esc(row.slot||'Día completo'),row.active?'Bloqueado':'Liberado',
+  row.active&&editable&&row.day>=new Date().toLocaleDateString('sv-SE',{timeZone:'America/Santiago'})?btn('Liberar','agenda-unblock',row.day+'|'+row.slot):''
+ ]));
+ screen.innerHTML+=panel('Administración de agenda',controls+history);
 }
 async function clientForm(id){
  const c=id?await api('clients/'+id+'/'):{};const agreements=await api('agreements/');
@@ -150,8 +253,15 @@ document.addEventListener('submit',async e=>{
  try{switch(f.dataset.form){
  case 'login':{const r=await api('login/',{method:'POST',body:data});csrf=r.csrf;location.reload();return;}
  case 'search':location.href='clientes.html?q='+encodeURIComponent(data.q);return;
+ case 'catalog-filter':{const query=new URLSearchParams(data);if(params.get('gestion')==='1')query.set('gestion','1');location.href='catalogo.html?'+query;return;}
+ case 'own-prescription':{const payload=new FormData(f);payload.delete('product');await api('my-prescriptions/',{method:'POST',body:payload});close();await productRequestForm(data.product);message('Receta guardada. Selecciona una vigente.');return;}
+ case 'request-product':{if(!data.prescription)delete data.prescription;data.contact_authorized=!!data.contact_authorized;data.idempotency_key=f.dataset.key;const result=await api('product-requests/',{method:'POST',body:data});close();dialog('Solicitud registrada',note('Queda pendiente de revisión por el personal.')+`<p>Referencia: ${esc(result.reference)}</p>`);return;}
+ case 'product':{const payload=new FormData(f),id=data.id;payload.delete('id');if(!payload.get('image').size)payload.delete('image');await api('catalog-management/'+(id?id+'/':''),{method:id?'PATCH':'POST',body:payload});break;}
  case 'inquiry-filter':location.href='solicitudes.html?'+new URLSearchParams(data);return;
- case 'inquiry':data.source=params.get('origen')==='qr'?'qr':'web';if(data.kind!=='registro')delete data.registration_rut;data.contact_authorized=!!data.contact_authorized;data.idempotency_key=f.dataset.key;data.day=data.day||null;data.slot=data.slot||null;{const r=await api('inquiries/',{method:'POST',body:data});screen.innerHTML=head('Solicitud registrada')+note(r.detail)+`<p>Referencia: ${esc(r.reference)}</p>`+link('Volver al inicio','index.html');return;}
+ case 'agreement':{const id=data.id;delete data.id;for(const field of ['starts_on','ends_on'])data[field]=data[field]||null;await api('agreements/'+(id?id+'/':''),{method:id?'PATCH':'POST',body:data});break;}
+ case 'agreement-review':{const id=data.id;delete data.id;await api('agreement-verifications/'+id+'/',{method:'POST',body:data});break;}
+ case 'agenda-block':{data.day=data.block_day;delete data.block_day;if(!data.slot)delete data.slot;await api('agenda/blocks/',{method:'POST',body:data});break;}
+ case 'inquiry':data.source=params.get('origen')==='qr'?'qr':'web';if(data.kind!=='registro'){delete data.registration_rut;delete data.agreement_code;delete data.agreement_role;}data.contact_authorized=!!data.contact_authorized;data.idempotency_key=f.dataset.key;data.day=data.day||null;data.slot=data.slot||null;{const r=await api('inquiries/',{method:'POST',body:data});screen.innerHTML=head('Solicitud registrada')+note(r.detail)+`<p>Referencia: ${esc(r.reference)}</p>`+link('Volver al inicio','index.html');return;}
  case 'client':{const id=data.id;delete data.id;data.consent=!!data.consent;data.active=data.active==='true';data.agreement=data.agreement||null;await api('clients/'+(id?id+'/':''),{method:id?'PATCH':'POST',body:data});break;}
  case 'recipe':await api('prescriptions/',{method:'POST',body:new FormData(f)});break;
  case 'quote':{const id=data.id;delete data.id;data.approved=!!data.approved;data.agreement=data.agreement||null;data.prescription=data.prescription||null;data.characteristics=data.product_type==='particular'?{frame:data.frame,crystal:data.crystal,focus:data.focus}:{security_model:data.frame,security_color:data.crystal,focus:data.focus};delete data.frame;delete data.crystal;delete data.focus;await api('quotes/'+(id?id+'/':''),{method:id?'PATCH':'POST',body:data});break;}
@@ -161,16 +271,30 @@ document.addEventListener('submit',async e=>{
  case 'settings':await api('configuration/',{method:'PATCH',body:data});break;
  case 'delivery':if(!data.accepted||!signature)throw new Error('Debe aceptar la conformidad y dibujar la firma.');{const r=await api('orders/'+review.order+'/deliver/',{method:'POST',body:{accepted:true,signature,review_token:review.review_token,observations:data.observations}});screen.innerHTML=head('Entrega registrada')+note('La orden está entregada. El documento y su referencia quedaron guardados en el servidor.')+btn('Ver documento / PDF','file','receipts/'+r.id+'/pdf/')+link('Documentos','documentos.html');return;}
  }close();await render();message('Operación guardada en el servidor.');
- }catch(err){f.querySelector('.form-feedback').textContent=err.message;}finally{submit.disabled=false;}
+ }catch(err){
+  if(f.dataset.form==='inquiry'&&data.kind==='agenda'&&err.status===409){
+   try{await loadAvailability(f);}catch{/* Se conserva el mensaje del envío. */}
+  }
+  f.querySelector('.form-feedback').textContent=err.message;
+ }finally{submit.disabled=false;}
 });
 document.addEventListener('click',async e=>{const b=e.target.closest('[data-op]');if(!b)return;const id=b.dataset.id;try{switch(b.dataset.op){
  case 'reload':location.reload();break;
+ case 'agenda-unblock':{const [day,slot]=id.split('|');await api('agenda/blocks/',{method:'POST',body:{day,...(slot?{slot}:{}),active:false}});await render();message('Bloqueo liberado.');break;}
  case 'attention-qr':await showAttentionQR();break;
  case 'qr-copy':await navigator.clipboard.writeText(id);message('Enlace copiado.');break;
  case 'qr-enlarge':document.querySelector('.attention-qr').classList.toggle('enlarged');break;
  case 'qr-print':printAttentionQR();break;
- case 'inquiry-detail':{const r=await api('inquiries/'+id+'/');dialog('Solicitud #'+r.id,`<dl><dt>Solicitante</dt><dd>${esc(r.name)}</dd><dt>Contacto</dt><dd>${esc(r.phone)} · ${esc(r.email||'No informado')}</dd><dt>Tipo y origen</dt><dd>${esc(r.kind)} · ${esc(r.source==='qr'?'Código QR':'Sitio web')}</dd><dt>Recepción</dt><dd>${date(r.created_at)}</dd><dt>Atención solicitada</dt><dd>${esc(r.service)} · ${esc(r.day||'')} ${esc(r.slot||'')}</dd><dt>Motivo y observaciones</dt><dd>${esc(r.reason)}</dd><dt>Estado</dt><dd>${esc(r.status)}</dd></dl>${r.client?link('Revisar ficha asociada','detalle_cliente.html?cliente='+r.client):''}`);break;}
+ case 'inquiry-detail':{const r=await api('inquiries/'+id+'/');dialog('Solicitud #'+r.id,`<dl><dt>Solicitante</dt><dd>${esc(r.name)}</dd><dt>Contacto</dt><dd>${esc(r.phone)} · ${esc(r.email||'No informado')}</dd><dt>Tipo y origen</dt><dd>${esc(r.kind)} · ${esc(r.source==='qr'?'Código QR':'Sitio web')}</dd><dt>Recepción</dt><dd>${date(r.created_at)}</dd><dt>Atención solicitada</dt><dd>${esc(r.service)} · ${esc(r.day||'')} ${esc(r.slot||'')}</dd><dt>Motivo y observaciones</dt><dd>${esc(r.reason)}</dd><dt>Estado</dt><dd>${esc(r.status)}</dd></dl>${r.agreement?`<p>Convenio #${esc(r.agreement)} · ${esc(r.agreement_role)} · ${esc(r.verification_state)}</p>`:''}${r.verification_state==='pendiente'&&has('change_agreement')?btn('Validar pertenencia','agreement-review',r.id):''}${r.product?`<p>Producto de catálogo #${esc(r.product)}</p>`:''}${r.prescription&&has('view_prescription')?btn('Ver receta autorizada','file','prescriptions/'+r.prescription+'/file/'):''}${r.client?link('Revisar ficha asociada','detalle_cliente.html?cliente='+r.client):''}`);break;}
  case 'logout':await api('logout/',{method:'POST',body:{}});location.href='index.html';break;
+ case 'agreement-visit':{const result=await api('clients/'+id+'/agreement/',{method:'POST',body:{}});message(result.detail);break;}
+ case 'agreement-new':await agreementForm();break;
+ case 'agreement-edit':await agreementForm(id);break;
+ case 'agreement-qr':{const data=await api('agreements/'+id+'/qr/');dialog('QR de convenio',`<div class="attention-qr"><img alt="Código QR del convenio" src="/api/agreements/${esc(id)}/qr/?image=png"><p class="qr-url">${esc(data.url)}</p>${btn('Copiar enlace','qr-copy',data.url)}</div>`);break;}
+ case 'agreement-review':dialog('Validar pertenencia',form('agreement-review',`<input name="id" type="hidden" value="${esc(id)}">`+select('approved','Decisión',[['true','Aprobar'],['false','Rechazar']])+select('method','Método',[['nomina','Nómina autorizada'],['responsable','Responsable del convenio'],['presencial','Validación presencial']])+input('note','Referencia de verificación, sin datos sensibles')));break;
+ case 'request-product':await productRequestForm(id);break;
+ case 'product-new':await productForm();break;
+ case 'product-edit':await productForm(id);break;
  case 'client-new':await clientForm();break;
  case 'client-edit':await clientForm(id);break;
  case 'recipe-new':await recipeForm();break;

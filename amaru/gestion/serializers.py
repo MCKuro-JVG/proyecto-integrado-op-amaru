@@ -46,9 +46,17 @@ class ProductSerializer(serializers.ModelSerializer):
     image=serializers.ImageField(write_only=True,required=False)
     class Meta:
         model=Product
-        fields=['id','sku','name','category','description','crystal','treatments','color','image','image_url','active']
+        fields=['id','sku','name','category','description','lens_type','crystal','treatments','color','reference_price','requires_prescription','image','image_url','active']
     def get_image_url(self,obj):
         return f'/api/products/{obj.pk}/image/' if obj.image else None
+    def validate_name(self, value):
+        matches = Product.objects.filter(name__iexact=value.strip())
+        if self.instance:
+            matches = matches.exclude(pk=self.instance.pk)
+        if matches.exists():
+            raise serializers.ValidationError("Ya hay un producto con ese nombre.")
+        return value.strip()
+
     def validate_image(self,value):
         from .validators import validate_document
         validate_document(value)
@@ -113,18 +121,19 @@ class WarrantySerializer(serializers.ModelSerializer):
 
 
 class InquirySerializer(serializers.ModelSerializer):
+    agreement_code = serializers.CharField(required=False, allow_blank=True, max_length=24, write_only=True)
     website=serializers.CharField(required=False,allow_blank=True,write_only=True,max_length=200)
     class Meta:
         model=Inquiry
-        fields=['id','token','idempotency_key','kind','name','phone','email','service','reason','contact_authorized','day','slot','status','created_at','source','registration_rut','client','website']
-        read_only_fields=['token','status','created_at','client']
+        fields=['id','token','idempotency_key','kind','name','phone','email','service','reason','contact_authorized','day','slot','status','created_at','source','registration_rut','client','product','prescription','agreement_code','agreement','agreement_role','verification_state','verification_method','verification_note','verified_at','website']
+        read_only_fields=['token','status','created_at','client','product','prescription','agreement','verification_state','verification_method','verification_note','verified_at']
         extra_kwargs={'idempotency_key':{'validators':[]},'email':{'required':False,'allow_blank':True},'reason':{'trim_whitespace':True}}
     def validate(self,data):
         if data.pop('website',''): raise serializers.ValidationError('No se pudo registrar la solicitud.')
         if data['kind']=='agenda':
             if not data.get('day') or not data.get('slot'): raise serializers.ValidationError('Seleccione fecha y horario.')
             if data['day']<timezone.localdate(): raise serializers.ValidationError('La fecha no puede ser pasada.')
-            if data['slot'].second or data['slot'].microsecond or data['slot'].strftime('%H:%M') not in ('09:00','10:00','11:00','15:00','16:00'):
+            if data['slot'].second or data['slot'].microsecond:
                 raise serializers.ValidationError('Horario fuera de la agenda académica.')
         else: data.update(day=None,slot=None)
         if len(data['name'].strip())<3 or len(data['reason'].strip())<5:
@@ -139,6 +148,17 @@ class InquirySerializer(serializers.ModelSerializer):
             try: data['registration_rut']=normalize_rut(rut)
             except Exception as exc: raise serializers.ValidationError({'registration_rut':'RUT inválido.'}) from exc
         elif rut: raise serializers.ValidationError({'registration_rut':'El RUT solo corresponde al registro de cliente.'})
+        code = data.pop("agreement_code", "").strip().lower()
+        role = data.get("agreement_role", "")
+        if code:
+            agreement = Agreement.objects.filter(code=code).first()
+            if data["kind"] != "registro" or not agreement or not agreement.available:
+                raise serializers.ValidationError({"agreement_code": "El convenio no está disponible para este registro."})
+            if role not in ("titular", "carga") or (role == "carga" and not agreement.allow_dependents):
+                raise serializers.ValidationError({"agreement_role": "Selecciona una calidad permitida para el convenio."})
+            data["agreement"] = agreement
+        elif role:
+            raise serializers.ValidationError({"agreement_code": "Ingresa el código de convenio."})
         return data
 
 
@@ -165,4 +185,12 @@ class InventorySerializer(serializers.ModelSerializer):
 class AgreementSerializer(serializers.ModelSerializer):
     class Meta:
         model=Agreement
-        fields=['id','name','active']
+        fields = ['id', 'name', 'active', 'code', 'starts_on', 'ends_on', 'contact_name', 'contact_email', 'allow_dependents', 'available']
+        read_only_fields = ['code', 'available']
+
+    def validate(self, data):
+        start = data.get('starts_on', getattr(self.instance, 'starts_on', None))
+        end = data.get('ends_on', getattr(self.instance, 'ends_on', None))
+        if start and end and end < start:
+            raise serializers.ValidationError({'ends_on': 'La fecha de término debe ser posterior o igual al inicio.'})
+        return data

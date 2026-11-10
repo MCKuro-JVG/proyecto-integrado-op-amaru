@@ -8,7 +8,7 @@ class PublicBoundaryMiddleware:
     def __init__(self,get_response): self.get_response=get_response
     def __call__(self,request):
         path=request.path
-        allowed=(request.method in ('GET','HEAD') and (path in ['/healthz/','/', '/app/', '/app/index.html','/app/catalogo.html','/app/formulario_remoto.html','/api/session/','/api/products/','/favicon.ico'] or path.startswith('/static/')))
+        allowed=(request.method in ('GET','HEAD') and (path in ['/healthz/','/', '/app/', '/app/index.html','/app/catalogo.html','/app/formulario_remoto.html','/api/agenda/','/api/session/','/api/products/','/favicon.ico'] or path.startswith('/static/')))
         allowed=allowed or (request.method=='POST' and path=='/api/inquiries/')
         if not allowed: return HttpResponse('Ruta no disponible en la demostración pública.',status=404,content_type='text/plain')
         if getattr(settings,'ATTENTION_PUBLIC_ONLY',False) and not request.is_secure():

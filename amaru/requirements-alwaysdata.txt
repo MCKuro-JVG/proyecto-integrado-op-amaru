@@ -1,0 +1,13 @@
+# Dependencias de ejecución de la demostración académica en Linux.
+Django==5.2.17
+djangorestframework==3.16.1
+python-dotenv==1.2.4
+mysqlclient==2.2.7
+Pillow==12.3.0
+pypdf==6.19.0
+reportlab==5.0.1
+qrcode==8.2
+django-storages==1.14.6
+boto3==1.43.118
+tzdata==2026.5
+whitenoise==6.12.0

@@ -74,13 +74,31 @@ class Products(Records):
     def get_permissions(self):
         return [permissions.AllowAny()] if self.request.method in ('GET','HEAD','OPTIONS') else super().get_permissions()
     def get_queryset(self):
-        return super().get_queryset().filter(active=True)
+        return catalog_query(super().get_queryset().filter(active=True), self.request)
     @action(detail=True,methods=['get'])
     def image(self,request,pk=None):
         product=self.get_object()
         if not product.image: return Response(status=404)
         if settings.R2_ENABLED: return redirect(product.image.url)
         return FileResponse(product.image.open('rb'),content_type='image/png' if product.image.name.lower().endswith('.png') else 'image/jpeg')
+
+
+def catalog_query(products, request):
+    search = request.query_params.get("q", "").strip()[:180]
+    category = request.query_params.get("category", "")
+    if search:
+        products = products.filter(Q(name__icontains=search) | Q(sku__icontains=search))
+    if category:
+        products = products.filter(category=category)
+    return products
+
+
+class CatalogManagement(Records):
+    queryset = Product.objects.all()
+    serializer_class = ProductSerializer
+
+    def get_queryset(self):
+        return catalog_query(super().get_queryset(), self.request)
 
 
 class Quotes(Records):
@@ -214,12 +232,16 @@ class Inquiries(viewsets.GenericViewSet):
             return Response({'detail':'Ese horario ya tiene una solicitud. Seleccione otro.'},status=409)
         return Response({'reference':str(obj.token),'created':created,'detail':'Solicitud registrada para revisión; no confirma una atención ni envía mensajes.'},status=201 if created else 200)
     def partial_update(self,request,pk=None):
+        from .agenda import AgendaConflict, is_open, lock_agenda
         with transaction.atomic():
+            agenda = lock_agenda()
             obj=Inquiry.objects.select_for_update().get(pk=self.get_object().pk)
             value=request.data.get('status')
             if not isinstance(value,str) or value not in dict(Inquiry.STATES): raise ValidationError('Estado inválido.')
             if value in ('Cerrada','Cancelada'): AppointmentReservation.objects.filter(inquiry=obj).delete()
             elif obj.kind=='agenda':
+                if not AppointmentReservation.objects.filter(inquiry=obj).exists() and not is_open(agenda, obj.day, obj.slot):
+                    raise AgendaConflict()
                 try:
                     with transaction.atomic(): AppointmentReservation.objects.get_or_create(inquiry=obj,defaults={'day':obj.day,'slot':obj.slot})
                 except IntegrityError: raise ValidationError('No se puede reabrir: horario ocupado.')
@@ -273,6 +295,82 @@ class Agreements(Records):
     queryset=Agreement.objects.all()
     serializer_class=AgreementSerializer
 
+    @action(detail=True, methods=['get'])
+    def qr(self, request, pk=None):
+        from io import BytesIO
+        from urllib.parse import urlencode
+        import qrcode
+        from .attention import public_configuration
+
+        agreement = self.get_object()
+        base = public_configuration(request)['url']
+        if not base or not agreement.code or not agreement.available:
+            raise ValidationError('Se requiere un convenio vigente con código y una dirección HTTPS configurada.')
+        url = base.split('?', 1)[0] + '?' + urlencode({'origen': 'qr', 'convenio': agreement.code})
+        if request.query_params.get('image') == 'png':
+            output = BytesIO()
+            qrcode.make(url, box_size=10, border=4).save(output, format='PNG')
+            response = HttpResponse(output.getvalue(), content_type='image/png')
+        else:
+            response = Response({'url': url})
+        response['Cache-Control'] = 'no-store'
+        return response
+
+
+class VerificationInput(serializers.Serializer):
+    approved = serializers.BooleanField()
+    method = serializers.ChoiceField(choices=['nomina', 'responsable', 'presencial'])
+    note = serializers.CharField(max_length=500, min_length=5)
+
+
+@api_view(['POST'])
+def verify_agreement(request, pk):
+    if not request.user.has_perms(['gestion.change_agreement', 'gestion.view_inquiry']):
+        raise PermissionDenied()
+    form = VerificationInput(data=request.data)
+    form.is_valid(raise_exception=True)
+    values = form.validated_data
+    with transaction.atomic():
+        reference = get_object_or_404(Inquiry.objects.filter(agreement__isnull=False), pk=pk)
+        agreement = Agreement.objects.select_for_update().get(pk=reference.agreement_id)
+        inquiry = Inquiry.objects.select_for_update().get(pk=pk)
+        if inquiry.verification_state != 'pendiente':
+            return Response({'detail': 'La solicitud ya fue revisada.'}, status=409)
+        if values['approved']:
+            if not agreement.available or (inquiry.agreement_role == 'carga' and not agreement.allow_dependents):
+                raise ValidationError('El convenio no admite esta aprobación actualmente.')
+            client = get_object_or_404(Client.objects.select_for_update(), pk=inquiry.client_id)
+            if client.agreement_id and client.agreement_id != agreement.pk:
+                return Response({'detail': 'La ficha tiene otro convenio. Revisa la vinculación antes de aprobar.'}, status=409)
+            client.agreement = agreement
+            client.category = 'convenio'
+            client.save(update_fields=['agreement', 'category', 'updated_at'])
+        inquiry.verification_state = 'aprobada' if values['approved'] else 'rechazada'
+        inquiry.verification_method = values['method']
+        inquiry.verification_note = values['note']
+        inquiry.verified_by = request.user
+        inquiry.verified_at = timezone.now()
+        inquiry.save(update_fields=['verification_state', 'verification_method', 'verification_note', 'verified_by', 'verified_at', 'updated_at'])
+        audit(request.user, 'Verificación de convenio: ' + inquiry.verification_state, inquiry)
+    return Response(InquirySerializer(inquiry).data)
+
+
+@api_view(['GET', 'POST'])
+def client_agreement(request, pk):
+    if not request.user.has_perms(['gestion.view_client', 'gestion.view_agreement']):
+        raise PermissionDenied()
+    client = get_object_or_404(Client.objects.select_related('agreement'), pk=pk)
+    latest = client.inquiries.filter(agreement_id=client.agreement_id, verification_state='aprobada').order_by('-verified_at').first() if client.agreement_id else None
+    if request.method == 'POST':
+        if not request.user.has_perm('gestion.add_request'):
+            raise PermissionDenied()
+        audit(request.user, 'Atención presencial por convenio registrada', client)
+        return Response({'detail': 'Atención registrada en la bitácora.'}, status=201)
+    return Response({'agreement': client.agreement.name if client.agreement else None,
+        'available': client.agreement.available if client.agreement else False,
+        'verified': bool(latest), 'role': latest.agreement_role if latest else None,
+        'pending': client.inquiries.filter(verification_state='pendiente').exists()})
+
 
 @api_view(['GET'])
 @permission_classes([permissions.AllowAny])
@@ -322,5 +420,5 @@ def configuration(request):
         if not terms or len(terms)>12000: raise ValidationError('Condiciones requeridas, máximo 12000 caracteres.')
         with transaction.atomic():
             obj=obj or SiteConfiguration()
-            obj.warranty_terms=terms;obj.save();audit(request.user,'Condiciones de garantía actualizadas',obj)
+            obj.warranty_terms=terms;obj.save(update_fields=['warranty_terms'] if obj.pk else None);audit(request.user,'Condiciones de garantía actualizadas',obj)
     return Response({'warranty_terms':obj.warranty_terms if obj else SiteConfiguration._meta.get_field('warranty_terms').get_default()})
