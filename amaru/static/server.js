@@ -377,7 +377,16 @@ function mountAppointmentCalendar(form,calendar){
   loading=true;
   feedback.textContent='Cargando horarios…';
   try{
-   const {calendar:rows}=await api('agenda/');
+   const availability=await api('agenda/');
+   const rows=availability.calendar??availability.days.map(row=>({
+    day:row.day,slots:row.slots.map(time=>({time,status:'available'}))
+   }));
+   if(!rows.length){
+    day.value=slot.value='';
+    content.innerHTML='<button type="button" class="button soft" data-calendar-retry>Actualizar disponibilidad</button>';
+    feedback.textContent='Por ahora no hay horas disponibles.';
+    return;
+   }
    dates=new Map(rows.map(row=>[row.day,row.slots]));
    months=[...new Set(rows.map(row=>monthOf(row.day)))];
    month=months.includes(month)?month:months[0];
