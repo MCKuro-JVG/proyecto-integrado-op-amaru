@@ -42,11 +42,15 @@ function loginForm(){screen.innerHTML=head('Acceso a Ópticas Amaru','Inicia ses
 function error(e){screen.innerHTML=head('No se pudo cargar esta sección')+note(e.message)+btn('Reintentar','reload');}
 async function render(){
  try{
- const publicPages=['index','catalogo','formulario_remoto'];
+ const publicPages=['index','catalogo','formulario_remoto','producto','carrito','portal_convenios'];
  if(!publicPages.includes(page)&&!session.authenticated){loginForm();return;}
- if(!publicPages.includes(page)&&!['consulta','recepcion','documentos'].includes(page)&&!session.permissions.some(p=>p.startsWith('gestion.view_'))){screen.innerHTML=head('Acceso restringido')+link('Ir a mis pedidos','consulta.html');return;}
+ if(!publicPages.includes(page)&&!['consulta','recepcion','documentos','representante'].includes(page)&&!session.permissions.some(p=>p.startsWith('gestion.view_'))){screen.innerHTML=head('Acceso restringido')+link('Ir a mis pedidos','consulta.html');return;}
  if(page==='index'){screen.innerHTML=head('Una mirada clara. Una atención más cerca.','Conoce la propuesta de Ópticas Amaru y solicita orientación.')+`<section class="hero"><div><h2>Tu atención, conectada.</h2><p>Desde la primera consulta hasta el retiro de tus lentes.</p><div class="actions">${link('Solicitar atención','formulario_remoto.html')}${link('Productos y servicios','catalogo.html')}${link('Mis pedidos','consulta.html')}</div></div><img src="/static/interfaz/img/atencion_optica.svg" alt="Atención óptica" style="max-width:100%;width:400px"></section>`+note('Catálogo académico y horarios de referencia. Las solicitudes quedan registradas para revisión, sin envío automático de correos.');}
  else if(page==='catalogo')await renderCatalog();
+ else if(page==='producto')await renderProduct();
+ else if(page==='carrito')await renderCart();
+ else if(page==='portal_convenios')renderMembershipPortal();
+ else if(page==='representante')await renderRepresentative();
  else if(page==='convenios')await renderAgreements();
  else if(page==='formulario_remoto')await requestForm();
  else if(page==='consulta'){
@@ -81,9 +85,9 @@ async function renderCatalog(){
   <dt>Tratamientos</dt><dd>${esc(p.treatments||'Por definir')}</dd></dl>
   ${p.reference_price!==null?`<p>Referencia académica: ${currency(p.reference_price)}</p>`:''}
   <p>${p.active?'Visible en el catálogo':'Producto desactivado'}</p>`+
-  (manage?(has('change_product')?btn('Editar producto','product-edit',p.id):''):link('Consultar','formulario_remoto.html?tipo=contacto')+btn('Solicitar producto','request-product',p.id))));
+  (manage?(has('change_product')?btn('Editar producto','product-edit',p.id):''):link('Ver producto','producto.html?id='+p.id)+link('Consultar','formulario_remoto.html?tipo=contacto'))));
  screen.innerHTML=head(manage?'Administración de catálogo':'Productos y servicios','Catálogo académico con productos de prueba.')+
-  navigation+create+filters+`<div class="cards">${cards.join('')||note('No se encontraron productos.')}</div>`+pages(data);
+  navigation+create+link('Ver carrito','carrito.html')+filters+`<div class="cards">${cards.join('')||note('No se encontraron productos.')}</div>`+pages(data);
 }
 async function productRequestForm(id){
  if(!session.authenticated){
@@ -105,7 +109,7 @@ async function productForm(id){
  dialog(id?'Editar producto':'Nuevo producto',form('product',
   `<input type="hidden" name="id" value="${esc(id||'')}">`+input('sku','Código SKU','text',p.sku)+
   input('name','Nombre','text',p.name)+select('category','Categoría',categories,p.category)+area('description','Descripción',p.description)+
-  input('lens_type','Tipo de lente','text',p.lens_type,'')+input('crystal','Cristal','text',p.crystal,'')+
+  input('variants','Variantes separadas por coma','text',(p.variants||[]).join(', '),'maxlength="1600"')+input('lens_type','Tipo de lente','text',p.lens_type,'')+input('crystal','Cristal','text',p.crystal,'')+
   input('treatments','Tratamientos','text',p.treatments,'')+input('color','Color','text',p.color,'')+
   input('reference_price','Precio ficticio CLP','number',p.reference_price??'','min="0" step="1"')+
   input('image','Imagen JPG o PNG','file','','accept="image/jpeg,image/png"')+
@@ -117,7 +121,7 @@ async function renderAgreements(){
  const rows=result.results.map(a=>[esc(a.name),esc(a.code||'Guardar para generar'),a.available?'Vigente':'Inactivo o fuera de vigencia',
   (has('change_agreement')?btn('Editar','agreement-edit',a.id):'')+(a.available&&a.code?btn('Mostrar QR','agreement-qr',a.id):'')]);
  screen.innerHTML=head('Gestión de convenios','El código identifica al convenio. La pertenencia requiere revisión del personal.')+
-  (has('add_agreement')?btn('Nuevo convenio','agreement-new'):'')+link('Solicitudes recibidas','solicitudes.html')+
+  (has('add_agreement')?btn('Nuevo convenio','agreement-new'):'')+link('Solicitudes de validación','solicitudes.html?verification=all')+
   panel('Convenios',table(['Organización','Código','Estado','Acciones'],rows))+pages(result);
 }
 async function agreementForm(id){
@@ -129,9 +133,88 @@ async function agreementForm(id){
   select('allow_dependents','Cargas familiares',[['false','No admitidas'],['true','Admitidas']],String(a.allow_dependents??false))+
   select('active','Estado',[['true','Activo'],['false','Inactivo']],String(a.active??true))));
 }
+function renderMembershipPortal(){
+ screen.innerHTML=head('Convenios','Orientación para titulares y cargas familiares de organizaciones con convenio.')+
+  panel('Solicita tu validación',note('Utiliza el código que te entregó tu organización o abre su enlace escaneando el QR con la cámara del teléfono. La óptica revisará la pertenencia.')+
+   form('membership-start',input('code','Código de organización','text','','required maxlength="24"'),'Continuar al registro')+
+   link('Solicitar atención','formulario_remoto.html')+link('Acceso de representantes','representante.html'))+
+  panel('Consulta tu estado',form('membership-status',input('reference','Referencia privada recibida al enviar','text','','required maxlength="36"'),'Consultar estado'));
+}
+async function renderRepresentative(){
+ if(!session.representative){screen.innerHTML=head('Acceso de representantes')+note('Esta cuenta no está autorizada para revisar un convenio.');return;}
+ const data=await api('membership/queue/');
+ screen.innerHTML=head('Validación de pertenencia',data.organization)+panel('Solicitudes de tu organización',table(
+  ['Nombre','RUT','Calidad','Estado','Acción'],data.requests.map(r=>[esc(r.name),esc(r.rut),esc(r.role),badge(r.state),r.state==='pendiente'?btn('Revisar','representative-review',r.id):''])));
+}
+function readCart(){
+ try{
+  const saved=JSON.parse(sessionStorage.getItem('amaru-cart')||'[]');
+  return Array.isArray(saved)?saved.filter(x=>Number.isSafeInteger(x.product)&&x.product>0&&Number.isInteger(x.quantity)&&x.quantity>=1&&x.quantity<=99&&typeof x.variant==='string').slice(0,20):[];
+ }catch{return [];}
+}
+function saveCart(items){sessionStorage.setItem('amaru-cart',JSON.stringify(items));}
+async function renderProduct(){
+ const id=params.get('id')||'';
+ if(!/^\d+$/.test(id))throw new Error('Selecciona un producto del catálogo.');
+ const p=await api('products/'+id+'/');
+ const picture=`<img class="catalog-detail-image" src="${esc(p.image_url||'/static/interfaz/img/atencion_optica.svg')}" alt="${esc(p.name)}">`;
+ screen.innerHTML=head(p.name,'Producto de demostración')+panel('Modelo '+p.sku,picture+`<p>${esc(p.description)}</p><p>${esc([p.lens_type,p.crystal,p.color,p.treatments].filter(Boolean).join(' · '))}</p>`+
+  note(p.reference_price==null?'Precio sujeto a cotización':'Precio de referencia '+currency(p.reference_price))+
+  (p.requires_prescription?note('Requiere una receta vigente.'): '')+
+  form('cart-add',`<input name="product" type="hidden" value="${p.id}">`+
+   select('variant','Variante',p.variants?.length?p.variants:[['','Modelo único']])+input('quantity','Cantidad','number',1,'required min="1" max="99"'),'Agregar al carrito'))+
+  link('Ver carrito','carrito.html')+link('Volver al catálogo','catalogo.html');
+}
+async function renderCart(){
+ const items=readCart();
+ screen.innerHTML=head('Carrito','Revisa los productos antes de enviar una solicitud.')+link('Seguir explorando','catalogo.html');
+ if(!items.length){screen.innerHTML+=note('Tu carrito está vacío.');return;}
+ const ids=[...new Set(items.map(i=>i.product))];
+ const {results}=await api('products/?ids='+ids.join(','));
+ const products=new Map(results.map(p=>[p.id,p]));
+ const invalid=items.some(i=>!products.has(i.product)||!(products.get(i.product).variants?.length?products.get(i.product).variants:['']).includes(i.variant));
+ let total=0,complete=true;
+ const rows=items.map((i,index)=>{
+  const product=products.get(i.product),price=product?.reference_price;
+  if(price==null)complete=false;else total+=i.quantity*price;
+  return [esc(product?.name||'Producto no disponible')+'<br>'+esc([i.variant,product?.lens_type,product?.crystal,product?.color,product?.treatments].filter(Boolean).join(' · ')),
+   `<input aria-label="Cantidad de ${esc(product?.name||'producto')}" type="number" min="1" max="99" value="${i.quantity}" data-cart-index="${index}">`,
+   price==null?'Por cotizar':currency(price*i.quantity),product?.requires_prescription?'Sí':'—',btn('Quitar','cart-remove',index)];
+ });
+ screen.innerHTML+=panel('Productos seleccionados',table(['Producto','Cantidad','Subtotal','Receta','Acción'],rows)+note((complete?'Subtotal de referencia: ':'Subtotal de productos con precio: ')+currency(total)));
+ if(invalid){screen.innerHTML+=note('Quita o reemplaza los productos y variantes que ya no están disponibles.');return;}
+ if(!session.authenticated){screen.innerHTML+=panel('Identificación',note('Inicia sesión con tu cuenta de cliente para enviar esta selección.')+form('login',input('username','Usuario o correo')+input('password','Contraseña','password','','required autocomplete="current-password"'),'Iniciar sesión'));return;}
+ if(!session.client_id){screen.innerHTML+=note('Se requiere una cuenta vinculada a una ficha activa.');return;}
+ const [profile,recipes]=await Promise.all([api('checkout/'),api('my-prescriptions/')]);
+ const needsRecipe=items.some(i=>products.get(i.product).requires_prescription);
+ screen.innerHTML+=panel('Resumen de solicitud',`<p>${esc(profile.name)} · ${esc(profile.phone)} · ${esc(profile.email||'Sin correo')}</p>`+
+  note(profile.agreement?'Convenio validado y vigente: '+profile.agreement:'Atención particular')+note('Estado inicial: Nueva · Pendiente de revisión')+
+  (needsRecipe?note('El carrito requiere una receta vigente. Si aún no tienes una, solicita una evaluación.'): '')+
+  form('checkout',select('mode','Modalidad',[['cotizacion','Solicitud de cotización'],['compra','Solicitud de compra']])+
+   select('prescription','Receta privada',[['','Selecciona una receta si corresponde'],...recipes.map(r=>[r.id,'Receta del '+r.issued_on])])+
+   area('reason','Observaciones','Solicito revisar la selección del catálogo.')+check('contact_authorized','Autorizo el contacto para gestionar esta solicitud.'),'Enviar solicitud')+
+  '<details><summary>Adjuntar receta privada</summary>'+form('cart-recipe',input('issued_on','Fecha de emisión','date')+input('file','JPG, PNG o PDF','file','','required accept=".jpg,.jpeg,.png,.pdf"'),'Guardar receta')+'</details>'+
+  link('Agendar evaluación','formulario_remoto.html'));
+ const checkout=screen.querySelector('[data-form=checkout]');checkout.dataset.key=crypto.randomUUID();
+ checkout.elements.prescription.required=needsRecipe;
+ checkout.elements.contact_authorized.required=true;
+}
+async function purchaseDetail(id){
+ const purchase=await api('purchases/'+id+'/');
+ const rows=purchase.items.map(i=>[esc(i.product_name),esc(i.variant||'Modelo único'),esc(i.quantity),i.unit_price==null?'Por cotizar':currency(i.unit_price)]);
+ let actions='';
+ if(purchase.quote)actions=link('Abrir cotizaciones','cotizaciones.html');
+ else if(has('add_quote')&&has('view_quote')&&!['Cerrada','Cancelada'].includes(purchase.state)){
+  const fields=purchase.items.map(i=>input('price_'+i.id,'Precio unitario CLP','number',i.unit_price??'','required min="0" max="999999999" step="1"')).map((field,index)=>'<div><p>'+esc(purchase.items[index].product_name)+' · '+esc(purchase.items[index].variant)+'</p>'+field+'</div>').join('');
+  actions=form('purchase-quote',`<input name="id" type="hidden" value="${esc(id)}">`+fields,'Crear borrador de cotización');
+ }
+ dialog('Detalle de solicitud',note(purchase.mode+' · '+purchase.state)+note(purchase.agreement||'Atención particular')+
+  table(['Producto','Variante','Cantidad','Referencia unitaria'],rows)+
+  (purchase.prescription&&has('view_prescription')?btn('Abrir receta autorizada','file','prescriptions/'+purchase.prescription+'/file/'): '')+actions);
+}
 async function requestForm(){
  const code=params.get('convenio')||'';
- const kind=code?'registro':params.get('tipo')||'agenda';
+ const kind=code||params.get('registro_convenio')==='1'?'registro':params.get('tipo')||'agenda';
  screen.innerHTML=head('Agendar / contactar','No necesitas una cuenta. Tu solicitud será revisada por el personal.')+
  form('inquiry',select('kind','Tipo de solicitud',[['agenda','Atención'],['contacto','Contacto'],['lentes','Orientación de lentes'],['registro','Registro de cliente']],kind)+
  input('name','Nombre completo','text','','required minlength="3" maxlength="180" autocomplete="name"')+
@@ -185,7 +268,7 @@ function printAttentionQR(){const img=document.getElementById('attention-qr');if
 
 function ordersTable(rows,own=false){return table(['Orden','Cliente','Producto','Estado','Acción'],rows.map(o=>[esc(o.folio),esc(o.client_name),esc(Object.values(o.characteristics).join(' · ')),badge(o.status),`<div class="actions">${o.status==='Disponible para retiro'?link('Revisar retiro','recepcion.html?pedido='+o.id):''}${!own&&o.status!=='Entregada'&&has('change_order')?btn('Actualizar','order-state',o.id):''}${o.status==='Entregada'?link('Documentos','documentos.html'):''}</div>`]));}
 async function modulePage(){
- const endpoint=endpoints[page],q=page==='clientes'&&params.get('q')?'?q='+encodeURIComponent(params.get('q')):page==='solicitudes'?'?'+new URLSearchParams([...params].filter(([k])=>['status','day'].includes(k))):'';
+ const endpoint=endpoints[page],q=page==='clientes'&&params.get('q')?'?q='+encodeURIComponent(params.get('q')):page==='solicitudes'?'?'+new URLSearchParams([...params].filter(([k])=>['status','day','verification'].includes(k))):'';
  const data=await list(endpoint+'/'+q);let body='',action='';
  if(page==='clientes'){
  action=has('add_client')?btn('Registrar cliente','client-new'):'';
@@ -248,17 +331,33 @@ async function delivery(){
 }
 function setupSignature(){signature='';const canvas=document.getElementById('signature'),ctx=canvas.getContext('2d'),rect=canvas.getBoundingClientRect();canvas.width=Math.max(300,rect.width);canvas.height=180;ctx.lineWidth=2.5;ctx.lineCap='round';let drawing=false,points=0;canvas.onpointerdown=e=>{drawing=true;canvas.setPointerCapture(e.pointerId);ctx.beginPath();ctx.moveTo(e.offsetX,e.offsetY);};canvas.onpointermove=e=>{if(!drawing)return;ctx.lineTo(e.offsetX,e.offsetY);ctx.stroke();points++;};canvas.onpointerup=()=>{drawing=false;if(points>3)signature=canvas.toDataURL('image/png');};canvas.clear=()=>{ctx.clearRect(0,0,canvas.width,canvas.height);signature='';points=0;};}
 async function openFile(path){const win=window.open('about:blank','_blank');try{const r=await fetch('/api/'+path,{credentials:'same-origin'});if(!r.ok)throw new Error('No se pudo acceder al documento autorizado.');if(r.headers.get('content-type')?.includes('json')){const data=await r.json();if(win)win.location=data.url;else location.href=data.url;}else{const url=URL.createObjectURL(await r.blob());if(win)win.location=url;else location.href=url;setTimeout(()=>URL.revokeObjectURL(url),60000);}}catch(e){win?.close();throw e;}}
+document.addEventListener('change',async e=>{
+ const field=e.target;
+ if(!field.matches('[data-cart-index]'))return;
+ const items=readCart(),line=items[Number(field.dataset.cartIndex)];
+ if(!line)return;
+ if(!field.reportValidity()||!Number.isInteger(field.valueAsNumber)){field.value=line.quantity;return;}
+ line.quantity=field.valueAsNumber;
+ try{saveCart(items);await renderCart();}catch(err){error(err);}
+});
 document.addEventListener('submit',async e=>{
  const f=e.target;if(!f.dataset.form)return;e.preventDefault();if(!f.reportValidity())return;
  const data=Object.fromEntries(new FormData(f)),submit=f.querySelector('[type=submit]');submit.disabled=true;
  try{switch(f.dataset.form){
+ case 'membership-start':location.href='formulario_remoto.html?registro_convenio=1&convenio='+encodeURIComponent(data.code.trim());return;
+ case 'membership-status':{const result=await api('membership/status/',{method:'POST',body:data});f.querySelector('.form-feedback').textContent='Estado: '+result.state;return;}
+ case 'representative-review':{const id=data.id;delete data.id;await api('membership/queue/'+id+'/',{method:'POST',body:data});break;}
+ case 'cart-add':{const items=readCart(),product=Number(data.product),quantity=Number(data.quantity),variant=data.variant;const line=items.find(i=>i.product===product&&i.variant===variant);if(line){if(line.quantity+quantity>99)throw new Error('El máximo por variante es 99.');line.quantity+=quantity;}else{if(items.length>=20)throw new Error('El carrito admite hasta 20 selecciones.');items.push({product,variant,quantity});}saveCart(items);location.href='carrito.html';return;}
+ case 'cart-recipe':await api('my-prescriptions/',{method:'POST',body:new FormData(f)});await renderCart();message('Receta privada guardada. Selecciónala para continuar.');return;
+ case 'checkout':{const payload={...data,items:readCart(),contact_authorized:!!data.contact_authorized,idempotency_key:f.dataset.key};if(!payload.prescription)delete payload.prescription;const result=await api('checkout/',{method:'POST',body:payload});saveCart([]);screen.innerHTML=head('Solicitud registrada','El personal revisará tu selección.')+note('Referencia: '+result.reference)+link('Volver al catálogo','catalogo.html');return;}
+ case 'purchase-quote':{const prices=Object.fromEntries(Object.entries(data).filter(([key])=>key.startsWith('price_')).map(([key,value])=>[key.slice(6),Number(value)]));const result=await api('purchases/'+data.id+'/quote/',{method:'POST',body:{prices}});close();if(has('change_quote'))await quoteForm(result.id);message('Borrador creado: '+result.folio);return;}
  case 'login':{const r=await api('login/',{method:'POST',body:data});csrf=r.csrf;location.reload();return;}
  case 'search':location.href='clientes.html?q='+encodeURIComponent(data.q);return;
  case 'catalog-filter':{const query=new URLSearchParams(data);if(params.get('gestion')==='1')query.set('gestion','1');location.href='catalogo.html?'+query;return;}
  case 'own-prescription':{const payload=new FormData(f);payload.delete('product');await api('my-prescriptions/',{method:'POST',body:payload});close();await productRequestForm(data.product);message('Receta guardada. Selecciona una vigente.');return;}
  case 'request-product':{if(!data.prescription)delete data.prescription;data.contact_authorized=!!data.contact_authorized;data.idempotency_key=f.dataset.key;const result=await api('product-requests/',{method:'POST',body:data});close();dialog('Solicitud registrada',note('Queda pendiente de revisión por el personal.')+`<p>Referencia: ${esc(result.reference)}</p>`);return;}
- case 'product':{const payload=new FormData(f),id=data.id;payload.delete('id');if(!payload.get('image').size)payload.delete('image');await api('catalog-management/'+(id?id+'/':''),{method:id?'PATCH':'POST',body:payload});break;}
- case 'inquiry-filter':location.href='solicitudes.html?'+new URLSearchParams(data);return;
+ case 'product':{const payload=new FormData(f),id=data.id;payload.delete('id');payload.set('variants',JSON.stringify(data.variants.split(',').map(v=>v.trim()).filter(Boolean)));if(!payload.get('image').size)payload.delete('image');await api('catalog-management/'+(id?id+'/':''),{method:id?'PATCH':'POST',body:payload});break;}
+ case 'inquiry-filter':{const filter=new URLSearchParams(data);if(params.get('verification'))filter.set('verification',params.get('verification'));location.href='solicitudes.html?'+filter;return;}
  case 'agreement':{const id=data.id;delete data.id;for(const field of ['starts_on','ends_on'])data[field]=data[field]||null;await api('agreements/'+(id?id+'/':''),{method:id?'PATCH':'POST',body:data});break;}
  case 'agreement-review':{const id=data.id;delete data.id;await api('agreement-verifications/'+id+'/',{method:'POST',body:data});break;}
  case 'agenda-block':{data.day=data.block_day;delete data.block_day;if(!data.slot)delete data.slot;await api('agenda/blocks/',{method:'POST',body:data});break;}
@@ -280,13 +379,16 @@ document.addEventListener('submit',async e=>{
  }finally{submit.disabled=false;}
 });
 document.addEventListener('click',async e=>{const b=e.target.closest('[data-op]');if(!b)return;const id=b.dataset.id;try{switch(b.dataset.op){
+ case 'cart-remove':{const items=readCart();items.splice(Number(id),1);saveCart(items);await renderCart();break;}
+ case 'purchase-detail':await purchaseDetail(id);break;
+ case 'representative-review':dialog('Validar pertenencia',form('representative-review',`<input name="id" type="hidden" value="${esc(id)}">`+select('approved','Decisión',[['true','Confirmar pertenencia'],['false','Rechazar']])+input('note','Referencia interna de la verificación')));break;
  case 'reload':location.reload();break;
  case 'agenda-unblock':{const [day,slot]=id.split('|');await api('agenda/blocks/',{method:'POST',body:{day,...(slot?{slot}:{}),active:false}});await render();message('Bloqueo liberado.');break;}
  case 'attention-qr':await showAttentionQR();break;
  case 'qr-copy':await navigator.clipboard.writeText(id);message('Enlace copiado.');break;
  case 'qr-enlarge':document.querySelector('.attention-qr').classList.toggle('enlarged');break;
  case 'qr-print':printAttentionQR();break;
- case 'inquiry-detail':{const r=await api('inquiries/'+id+'/');dialog('Solicitud #'+r.id,`<dl><dt>Solicitante</dt><dd>${esc(r.name)}</dd><dt>Contacto</dt><dd>${esc(r.phone)} · ${esc(r.email||'No informado')}</dd><dt>Tipo y origen</dt><dd>${esc(r.kind)} · ${esc(r.source==='qr'?'Código QR':'Sitio web')}</dd><dt>Recepción</dt><dd>${date(r.created_at)}</dd><dt>Atención solicitada</dt><dd>${esc(r.service)} · ${esc(r.day||'')} ${esc(r.slot||'')}</dd><dt>Motivo y observaciones</dt><dd>${esc(r.reason)}</dd><dt>Estado</dt><dd>${esc(r.status)}</dd></dl>${r.agreement?`<p>Convenio #${esc(r.agreement)} · ${esc(r.agreement_role)} · ${esc(r.verification_state)}</p>`:''}${r.verification_state==='pendiente'&&has('change_agreement')?btn('Validar pertenencia','agreement-review',r.id):''}${r.product?`<p>Producto de catálogo #${esc(r.product)}</p>`:''}${r.prescription&&has('view_prescription')?btn('Ver receta autorizada','file','prescriptions/'+r.prescription+'/file/'):''}${r.client?link('Revisar ficha asociada','detalle_cliente.html?cliente='+r.client):''}`);break;}
+ case 'inquiry-detail':{const r=await api('inquiries/'+id+'/');dialog('Solicitud #'+r.id,`<dl><dt>Solicitante</dt><dd>${esc(r.name)}</dd><dt>Contacto</dt><dd>${esc(r.phone)} · ${esc(r.email||'No informado')}</dd><dt>Tipo y origen</dt><dd>${esc(r.kind)} · ${esc(r.source==='qr'?'Código QR':'Sitio web')}</dd><dt>Recepción</dt><dd>${date(r.created_at)}</dd><dt>Atención solicitada</dt><dd>${esc(r.service)} · ${esc(r.day||'')} ${esc(r.slot||'')}</dd><dt>Motivo y observaciones</dt><dd>${esc(r.reason)}</dd><dt>Estado</dt><dd>${esc(r.status)}</dd></dl>${r.kind==='compra'?btn('Detalle de compra','purchase-detail',r.id):''}${r.agreement?`<p>Convenio #${esc(r.agreement)} · ${esc(r.agreement_role)} · ${esc(r.verification_state)}</p>`:''}${r.verification_state==='pendiente'&&has('change_agreement')?btn('Validar pertenencia','agreement-review',r.id):''}${r.product?`<p>Producto de catálogo #${esc(r.product)}</p>`:''}${r.prescription&&has('view_prescription')?btn('Ver receta autorizada','file','prescriptions/'+r.prescription+'/file/'):''}${r.client?link('Revisar ficha asociada','detalle_cliente.html?cliente='+r.client):''}`);break;}
  case 'logout':await api('logout/',{method:'POST',body:{}});location.href='index.html';break;
  case 'agreement-visit':{const result=await api('clients/'+id+'/agreement/',{method:'POST',body:{}});message(result.detail);break;}
  case 'agreement-new':await agreementForm();break;
@@ -325,7 +427,7 @@ document.querySelector('[data-public-menu]')?.addEventListener('click',e=>{const
   const topbar=document.querySelector('.topbar');if(topbar)topbar.innerHTML=link('Mis pedidos','consulta.html')+link('Mis documentos','documentos.html');
  }
  const top=document.querySelector('.topbar')||document.querySelector('.public-header');
- if(session.authenticated)top?.insertAdjacentHTML('beforeend',btn('Cerrar sesión','logout'));
+ if(session.authenticated)top?.insertAdjacentHTML('beforeend',(session.representative?link('Validar pertenencia','representante.html'):'')+btn('Cerrar sesión','logout'));
  document.querySelectorAll('.demo-tag').forEach(n=>n.textContent='DATOS DEL SERVIDOR');await render();document.dispatchEvent(new Event('amaru-rendered'));
 }catch(e){error(e);}finally{delete document.documentElement.dataset.amaruStarting;document.documentElement.dataset.amaruReady='true';}})();
 })();

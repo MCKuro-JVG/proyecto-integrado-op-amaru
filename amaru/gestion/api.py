@@ -16,7 +16,7 @@ from django.utils.decorators import method_decorator
 from rest_framework import viewsets, serializers, permissions, status
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import APIException, PermissionDenied, ValidationError
 from .models import *
 from .serializers import *
 from .services import audit, record_consent, convert_quote, accept_receipt
@@ -90,6 +90,12 @@ def catalog_query(products, request):
         products = products.filter(Q(name__icontains=search) | Q(sku__icontains=search))
     if category:
         products = products.filter(category=category)
+    ids = request.query_params.get('ids')
+    if ids is not None:
+        identifiers = ids.split(',')
+        if len(identifiers) > 20 or any(not v.isascii() or not v.isdecimal() or len(v) > 18 for v in identifiers):
+            raise ValidationError('Identificadores de catálogo no válidos.')
+        products = products.filter(pk__in=identifiers)
     return products
 
 
@@ -134,7 +140,8 @@ class Quotes(Records):
 
 class OwnedRead(permissions.BasePermission):
     def has_permission(self,request,view):
-        return request.user.is_authenticated
+        from .membership import representative_for
+        return request.user.is_authenticated and representative_for(request.user) is None
 
 
 class Orders(viewsets.ReadOnlyModelViewSet):
@@ -207,6 +214,9 @@ class Inquiries(viewsets.GenericViewSet):
     def get_queryset(self):
         qs=self.queryset.select_related('client').order_by('-created_at')
         state=self.request.query_params.get('status','')
+        verification=self.request.query_params.get('verification','')
+        if verification=='all': qs=qs.exclude(verification_state='')
+        elif verification: qs=qs.filter(verification_state=verification)
         day=self.request.query_params.get('day','')
         if state: qs=qs.filter(status=state)
         if day:
@@ -330,29 +340,43 @@ def verify_agreement(request, pk):
     form = VerificationInput(data=request.data)
     form.is_valid(raise_exception=True)
     values = form.validated_data
+    inquiry = review_membership(request.user, pk, values)
+    return Response(InquirySerializer(inquiry).data)
+
+
+class VerificationConflict(APIException):
+    status_code = 409
+
+
+def review_membership(user, pk, values, organization_id=None):
     with transaction.atomic():
-        reference = get_object_or_404(Inquiry.objects.filter(agreement__isnull=False), pk=pk)
+        candidates = Inquiry.objects.filter(agreement__isnull=False)
+        if organization_id is not None:
+            candidates = candidates.filter(agreement_id=organization_id)
+        reference = get_object_or_404(candidates, pk=pk)
         agreement = Agreement.objects.select_for_update().get(pk=reference.agreement_id)
         inquiry = Inquiry.objects.select_for_update().get(pk=pk)
         if inquiry.verification_state != 'pendiente':
-            return Response({'detail': 'La solicitud ya fue revisada.'}, status=409)
+            raise VerificationConflict('La solicitud ya fue revisada.')
+        if organization_id is not None and not agreement.available:
+            raise PermissionDenied('El convenio no está vigente.')
         if values['approved']:
             if not agreement.available or (inquiry.agreement_role == 'carga' and not agreement.allow_dependents):
                 raise ValidationError('El convenio no admite esta aprobación actualmente.')
             client = get_object_or_404(Client.objects.select_for_update(), pk=inquiry.client_id)
             if client.agreement_id and client.agreement_id != agreement.pk:
-                return Response({'detail': 'La ficha tiene otro convenio. Revisa la vinculación antes de aprobar.'}, status=409)
+                raise VerificationConflict('La ficha tiene otro convenio. Revisa la vinculación antes de aprobar.')
             client.agreement = agreement
             client.category = 'convenio'
             client.save(update_fields=['agreement', 'category', 'updated_at'])
         inquiry.verification_state = 'aprobada' if values['approved'] else 'rechazada'
         inquiry.verification_method = values['method']
         inquiry.verification_note = values['note']
-        inquiry.verified_by = request.user
+        inquiry.verified_by = user
         inquiry.verified_at = timezone.now()
         inquiry.save(update_fields=['verification_state', 'verification_method', 'verification_note', 'verified_by', 'verified_at', 'updated_at'])
-        audit(request.user, 'Verificación de convenio: ' + inquiry.verification_state, inquiry)
-    return Response(InquirySerializer(inquiry).data)
+        audit(user, 'Verificación de convenio: ' + inquiry.verification_state, inquiry)
+    return inquiry
 
 
 @api_view(['GET', 'POST'])
@@ -378,7 +402,9 @@ def session(request):
     token=get_token(request)
     user=request.user
     client=Client.objects.filter(user=user).first() if user.is_authenticated else None
-    response=Response({'authenticated':user.is_authenticated,'username':user.get_username() if user.is_authenticated else None,
+    from .membership import representative_for
+    representative = representative_for(user) if user.is_authenticated else None
+    response=Response({'representative': bool(representative), 'authenticated':user.is_authenticated,'username':user.get_username() if user.is_authenticated else None,
         'client_id':client.pk if client else None,'permissions':sorted(user.get_all_permissions()) if user.is_authenticated else [],
         'csrf':token,'storage':'r2' if settings.R2_ENABLED else 'local-private'})
     response['Cache-Control']='no-store'

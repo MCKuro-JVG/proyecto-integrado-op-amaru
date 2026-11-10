@@ -1,3 +1,4 @@
+from django import forms
 from django.contrib import admin
 from django.contrib.auth.models import User,Group
 from django.contrib.auth.admin import UserAdmin,GroupAdmin
@@ -37,3 +38,25 @@ for m in [Prescription,Request,Quote,Order,Warranty,Receipt,Consent]:admin.site.
 admin.site.register(Audit,AuditAdmin)
 admin.site.register(Product,LoggedAdmin)
 for m in [QuoteLine,Inquiry,AppointmentReservation,DeliveryAttempt]:admin.site.register(m,ReadOnlyAdmin)
+
+
+class RepresentativeForm(forms.ModelForm):
+    class Meta:
+        model = AgreementRepresentative
+        fields = '__all__'
+
+    def clean_user(self):
+        user = self.cleaned_data['user']
+        if user.is_staff or user.is_superuser or user.get_all_permissions():
+            raise forms.ValidationError('Usa una cuenta dedicada sin permisos de personal ni administración.')
+        return user
+
+
+class AgreementRepresentativeAdmin(LoggedAdmin):
+    form = RepresentativeForm
+    list_display = ['user', 'agreement', 'active']
+    autocomplete_fields = ['user']
+
+
+admin.site.register(AgreementRepresentative, AgreementRepresentativeAdmin)
+admin.site.register(PurchaseLine, ReadOnlyAdmin)

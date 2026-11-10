@@ -46,9 +46,17 @@ class ProductSerializer(serializers.ModelSerializer):
     image=serializers.ImageField(write_only=True,required=False)
     class Meta:
         model=Product
-        fields=['id','sku','name','category','description','lens_type','crystal','treatments','color','reference_price','requires_prescription','image','image_url','active']
+        fields=['id','sku','name','category','description','lens_type','variants','crystal','treatments','color','reference_price','requires_prescription','image','image_url','active']
     def get_image_url(self,obj):
         return f'/api/products/{obj.pk}/image/' if obj.image else None
+    def validate_variants(self, value):
+        if not isinstance(value, list) or len(value) > 20 or any(not isinstance(v, str) or not 1 <= len(v.strip()) <= 80 for v in value):
+            raise serializers.ValidationError('Indica hasta 20 variantes de entre 1 y 80 caracteres.')
+        labels = [v.strip() for v in value]
+        if len({v.casefold() for v in labels}) != len(labels):
+            raise serializers.ValidationError('Las variantes deben ser diferentes.')
+        return labels
+
     def validate_name(self, value):
         matches = Product.objects.filter(name__iexact=value.strip())
         if self.instance:
@@ -71,7 +79,7 @@ class QuoteSerializer(serializers.ModelSerializer):
         fields=['id','folio','client','prescription','product_type','category','agreement','characteristics','amount','approved','notes','created_at','updated_at','lines']
         read_only_fields=['created_at','updated_at']
     def get_lines(self,obj):
-        return [{'product':l.product_id,'name':l.product.name,'quantity':l.quantity,'unit_price':str(l.unit_price)} for l in obj.lines.all()]
+        return [{'product':l.product_id,'name':l.product_name or l.product.name,'variant':l.variant,'quantity':l.quantity,'unit_price':str(l.unit_price)} for l in obj.lines.all()]
     def validate(self,data):
         if self.instance and Order.objects.filter(quote=self.instance).exists():
             raise serializers.ValidationError('La cotización ya tiene una OT; conserva su versión.')
@@ -130,6 +138,7 @@ class InquirySerializer(serializers.ModelSerializer):
         extra_kwargs={'idempotency_key':{'validators':[]},'email':{'required':False,'allow_blank':True},'reason':{'trim_whitespace':True}}
     def validate(self,data):
         if data.pop('website',''): raise serializers.ValidationError('No se pudo registrar la solicitud.')
+        if data['kind'] == 'compra': raise serializers.ValidationError('Usa el carrito para solicitar una compra.')
         if data['kind']=='agenda':
             if not data.get('day') or not data.get('slot'): raise serializers.ValidationError('Seleccione fecha y horario.')
             if data['day']<timezone.localdate(): raise serializers.ValidationError('La fecha no puede ser pasada.')

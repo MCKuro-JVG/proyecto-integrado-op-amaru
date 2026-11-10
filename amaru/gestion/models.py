@@ -33,6 +33,12 @@ class Agreement(models.Model):
         return self.name
 
 
+class AgreementRepresentative(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='agreement_representative')
+    agreement = models.ForeignKey(Agreement, on_delete=models.PROTECT)
+    active = models.BooleanField(default=True)
+
+
 class Client(models.Model):
     CATEGORY=[('particular','Particular'),('convenio','Convenio Empresa/Sindicato')]
     rut=models.CharField('RUT',max_length=12,unique=True,validators=[validate_rut])
@@ -226,6 +232,7 @@ class Product(models.Model):
     treatments=models.CharField(max_length=200,blank=True)
     color=models.CharField(max_length=80,blank=True)
     lens_type = models.CharField(max_length=80, blank=True)
+    variants = models.JSONField(default=list, blank=True)
     reference_price = models.PositiveIntegerField(null=True, blank=True)
     requires_prescription = models.BooleanField(default=False)
     image=models.ImageField(upload_to=public_image_path,storage=public_storage,blank=True,validators=[validate_document])
@@ -239,14 +246,16 @@ class QuoteLine(models.Model):
     product=models.ForeignKey(Product,on_delete=models.PROTECT)
     quantity=models.PositiveIntegerField(default=1)
     unit_price=models.DecimalField(max_digits=12,decimal_places=0)
+    variant = models.CharField(max_length=80, blank=True)
+    product_name = models.CharField(max_length=180, blank=True)
     class Meta:
-        constraints=[models.UniqueConstraint(fields=['quote','product'],name='quote_product_once'),
+        constraints=[models.UniqueConstraint(fields=['quote','product','variant'],name='quote_product_variant_once'),
             models.CheckConstraint(condition=models.Q(quantity__gt=0),name='line_positive_quantity'),
             models.CheckConstraint(condition=models.Q(unit_price__gte=0),name='line_nonnegative_price')]
 
 
 class Inquiry(models.Model):
-    TYPES=[('agenda','Solicitud de atención'),('contacto','Contacto'),('lentes','Orientación de lentes'),('registro','Registro de cliente')]
+    TYPES=[('agenda','Solicitud de atención'),('contacto','Contacto'),('lentes','Orientación de lentes'),('registro','Registro de cliente'),('compra','Solicitud de compra')]
     STATES=[(s,s) for s in ['Nueva','En revisión','Contactada','Cerrada','Cancelada']]
     token=models.UUIDField(default=uuid.uuid4,unique=True,editable=False)
     idempotency_key=models.UUIDField(unique=True)
@@ -261,6 +270,8 @@ class Inquiry(models.Model):
     verification_method = models.CharField(max_length=12, blank=True)
     verification_note = models.CharField(max_length=500, blank=True)
     verified_at = models.DateTimeField(null=True, blank=True)
+    purchase_mode = models.CharField(max_length=12, choices=[('compra', 'Compra'), ('cotizacion', 'Cotización')], blank=True)
+    purchase_quote = models.OneToOneField(Quote, on_delete=models.PROTECT, null=True, blank=True, related_name='purchase_inquiry')
     verified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="verified_agreements")
     kind=models.CharField(max_length=20,choices=TYPES)
     name=models.CharField(max_length=180)
@@ -277,6 +288,23 @@ class Inquiry(models.Model):
     updated_at=models.DateTimeField(auto_now=True)
     class Meta:
         indexes=[models.Index(fields=['status','created_at'],name='inquiry_status_date')]
+
+
+class PurchaseLine(models.Model):
+    inquiry = models.ForeignKey(Inquiry, on_delete=models.PROTECT, related_name='purchase_lines')
+    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    product_name = models.CharField(max_length=180)
+    variant = models.CharField(max_length=80, blank=True)
+    quantity = models.PositiveSmallIntegerField()
+    unit_price = models.PositiveIntegerField(null=True)
+    characteristics = models.JSONField(default=dict)
+
+    class Meta:
+        ordering = ['product_id', 'variant']
+        constraints = [
+            models.UniqueConstraint(fields=['inquiry', 'product', 'variant'], name='purchase_product_variant_once'),
+            models.CheckConstraint(condition=models.Q(quantity__range=(1, 99)), name='purchase_line_valid_quantity'),
+        ]
 
 
 class AppointmentReservation(models.Model):

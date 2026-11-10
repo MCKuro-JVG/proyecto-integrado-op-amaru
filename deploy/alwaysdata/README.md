@@ -61,9 +61,9 @@ Los límites del plan Free son 1 GB de disco, 256 MB de RAM y un cuarto de CPU. 
 
 ## Estado de la preparación
 
-El panel confirmó el plan Free de `opticaamaru`, el subdominio `opticaamaru.alwaysdata.net` y MariaDB 11.8. Se creó `opticaamaru_amaru_demo` vacía, sin usuarios asignados. El subdominio responde por HTTPS con el sitio inicial del proveedor. Falta autorizar la clave de despliegue, crear el usuario dedicado, instalar las dependencias, aplicar las migraciones remotas y configurar el sitio WSGI.
+El sitio `opticaamaru.alwaysdata.net` se configuró como Python WSGI 3.12 con redirección a HTTPS. La base `opticaamaru_amaru_demo` usa MariaDB 11.8 y el usuario dedicado tiene acceso únicamente a ella. El perfil verifica la identidad del servidor MariaDB por TLS. La configuración y los archivos privados permanecen fuera del repositorio y de `STATIC_ROOT`.
 
-El perfil pasó la verificación local de WSGI, `collectstatic`, redirección HTTPS, CSRF y permisos con SQLite temporal. Las 94 pruebas en MariaDB 11.4 local pasaron en una base descartable, incluida la carrera entre una solicitud y un bloqueo. Las migraciones 0005–0008 se aplicaron en las dos bases locales después de respaldarlas.
+En el primer despliegue se verificaron el inicio público, el logo, `/healthz/`, la agenda y un envío ficticio desde el navegador. El registro quedó en `gestion_inquiry` con origen `qr`. Tras actualizar una versión, aplica las migraciones, ejecuta `collectstatic` y reinicia el sitio desde Web → Sites. Verifica la versión servida y repite el envío de prueba.
 
 ## Flujos agregados
 
@@ -71,3 +71,10 @@ El perfil pasó la verificación local de WSGI, `collectstatic`, redirección HT
 - **Catálogo:** búsqueda, filtros y administración autenticada. Las bajas se realizan desactivando, para conservar referencias históricas. Los precios son referencias académicas.
 - **Recetas:** el cliente autenticado con ficha activa puede cargar JPG, PNG o PDF privado y seleccionar su receta vigente al solicitar un producto. La orientación y el agendamiento público siguen disponibles. En alwaysdata se usa almacenamiento privado local para documentos ficticios, separado de las credenciales R2 y los datos operativos existentes.
 - **Convenios:** desde el panel se puede crear un convenio y obtener su código o QR. La pertenencia se registra como pendiente y un usuario autorizado documenta la revisión por nómina, responsable o en persona. Las nóminas se contrastan fuera del sistema. La ficha del cliente muestra la vigencia, la calidad validada y la posibilidad de registrar la visita en la bitácora.
+
+## Compras y convenios
+
+- El detalle del catálogo muestra variantes y precios de referencia. El carrito guarda identificadores, variantes y cantidades durante la sesión de la pestaña. Django vuelve a validar disponibilidad, variantes, precios, receta y convenio antes de registrar la solicitud.
+- `gestion_inquiry` contiene la solicitud y `gestion_purchaseline` sus líneas históricas. El personal revisa el detalle en Solicitudes recibidas, puede establecer precios y generar un borrador en `gestion_quote` y `gestion_quoteline`. La orden de trabajo conserva el flujo existente de receta y aprobación. Una integración de pagos posterior puede partir del identificador de solicitud o cotización con un registro de transacciones separado.
+- El portal Convenios admite código, registro y consulta por referencia privada. Para habilitar a un representante, crea una cuenta dedicada sin grupos ni permisos de personal y vincúlala a una organización en Administración Django → Agreement representatives. El representante puede revisar esa organización en `/app/representante.html`.
+- Queda por confirmar el catálogo y precios oficiales, las condiciones de cada convenio, los cupos de atención, la vigencia de recetas y las reglas de pago. No se aplican descuentos ni se procesan pagos en la demostración.

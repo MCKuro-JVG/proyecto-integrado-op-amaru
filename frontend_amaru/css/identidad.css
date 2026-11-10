@@ -32,3 +32,6 @@ body[data-experience="public"] { background: #fffafa; }
 .panel-head h2, .dashboard-stats .stat strong, .eyebrow, .timeline strong { color: var(--amaru-accent); }
 .hero .button.soft { background: var(--amaru-tint); color: var(--amaru-ink); }
 :focus-visible { outline: 3px solid var(--amaru-accent); outline-offset: 3px; }
+
+.catalog-detail-image { display: block; max-width: min(100%, 32rem); max-height: 22rem; object-fit: contain; border-radius: 10px; }
+[data-cart-index] { max-width: 5rem; }
