@@ -57,6 +57,31 @@ class Client(models.Model):
         self.rut=normalize_rut(self.rut)
         super().save(*args,**kwargs)
     def __str__(self): return f'{self.name} · {self.rut}'
+
+class ClientRegistration(models.Model):
+    """Solicitud privada; una coincidencia de RUT no prueba la identidad."""
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='client_registration')
+    rut = models.CharField('RUT', max_length=12, unique=True)
+    email = models.EmailField('correo', max_length=150, unique=True)
+    name = models.CharField('nombre', max_length=180)
+    phone = models.CharField('teléfono', max_length=30)
+    privacy_version = models.CharField('versión de privacidad aceptada', max_length=24)
+    promotions = models.BooleanField('autorización opcional de promociones', default=False)
+    created_at = models.DateTimeField('solicitada y aceptada el', auto_now_add=True)
+    approved_at = models.DateTimeField('verificada y activada el', null=True, blank=True)
+    approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+                                    related_name='approved_client_registrations', verbose_name='verificada por')
+    verification_note = models.CharField('referencia interna de verificación', max_length=240, blank=True)
+
+    class Meta:
+        verbose_name = 'solicitud de cuenta de cliente'
+        verbose_name_plural = 'solicitudes de cuentas de clientes'
+        ordering = ['-created_at', '-pk']
+
+    def __str__(self):
+        return f'Solicitud de cuenta #{self.pk}'
+
+
 class Consent(models.Model):
     client=models.ForeignKey(Client,on_delete=models.PROTECT,related_name='consents')
     authorized=models.BooleanField()

@@ -1,6 +1,12 @@
 from django.contrib.auth.backends import ModelBackend
 from django.contrib.auth import get_user_model
 class EmailBackend(ModelBackend):
+    def user_can_authenticate(self, user):
+        if not super().user_can_authenticate(user):
+            return False
+        from .models import ClientRegistration
+        return not ClientRegistration.objects.filter(user=user, approved_at__isnull=True).exists()
+
     def authenticate(self, request, username=None, password=None, **kwargs):
         User=get_user_model()
         try:

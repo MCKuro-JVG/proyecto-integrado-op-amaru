@@ -38,14 +38,53 @@ async function api(path,options={}){
 async function list(path){return api(path+(path.includes('?')?'&':'?')+'page='+(params.get('pagina')||1));}
 function paginationURL(number){const query=new URLSearchParams(params);query.set('pagina',number);return location.pathname+'?'+query;}
 function pages(result){return `<p>${esc(result.count)} registros · Página ${esc(params.get('pagina')||1)}</p><div class="actions">${result.previous?link('← Anterior',paginationURL(Number(params.get('pagina')||1)-1)):''}${result.next?link('Siguiente →',paginationURL(Number(params.get('pagina')||1)+1)):''}</div>`;}
-function loginForm(){screen.innerHTML=head('Acceso a Ópticas Amaru','Inicia sesión con una cuenta creada por el administrador. No se utilizan perfiles ficticios como mecanismo de acceso.')+panel('Autenticación',form('login',input('username','Usuario o correo','text','','required autocomplete="username"')+input('password','Contraseña','password','','required autocomplete="current-password"'),'Iniciar sesión'));}
+
+const registrationLink='<p class="signup-link"><a href="/app/registro.html">¿No tienes una cuenta? Regístrate aquí.</a></p>';
+async function renderRegistration(){
+ if(session.authenticated){screen.innerHTML=head('Tu sesión está activa')+link('Ir a mis pedidos','consulta.html');return;}
+ const setup=await api('register/');
+ screen.innerHTML=head('Crear cuenta','Regístrate para solicitar cotizaciones y consultar tus pedidos desde tu cuenta.')+
+ panel('Tus datos',form('register',
+  input('name','Nombre completo','text','','required maxlength="180" autocomplete="name"')+
+  input('rut','RUT','text','','required maxlength="18" placeholder="12.345.678-5"')+
+  input('email','Correo electrónico','email','','required maxlength="150" autocomplete="email"')+
+  input('phone','Número de teléfono','tel','','required maxlength="30" autocomplete="tel" placeholder="+56 9 …"')+
+  input('password','Contraseña','password','','required maxlength="128" autocomplete="new-password" aria-describedby="signup-password-help"')+
+  input('password_confirmation','Confirmar contraseña','password','','required maxlength="128" autocomplete="new-password"')+
+  '<p id="signup-password-help" class="wide">Elige una contraseña difícil de adivinar, distinta a tu nombre y correo.</p>'+
+  '<label class="check wide"><input type="checkbox" name="privacy" required><span>Acepto la <a href="privacidad.html" target="_blank" rel="noopener">política de privacidad</a> (se abre en otra pestaña).</span></label>'+
+  '<label class="check wide"><input type="checkbox" name="promotions">Autorizo recibir promociones (opcional).</label>'+
+  '<div class="signup-trap" aria-hidden="true"><label for="signup-website">Sitio web (dejar vacío)</label><input id="signup-website" name="website" tabindex="-1" autocomplete="off"></div>'+
+  `<input type="hidden" name="challenge" value="${esc(setup.challenge)}"><input type="hidden" name="privacy_version" value="${esc(setup.privacy_version)}">`,
+  'Crear mi cuenta')+link('Volver a Iniciar sesión','consulta.html'))+
+ note('Una persona autorizada verificará tu correo y tu identidad antes de activar la cuenta.');
+}
+function renderPrivacy(){
+ screen.innerHTML=head('Política de privacidad del registro','Versión académica · academica-1')+panel('Uso de los datos',
+  '<p>Ópticas Amaru usa tu nombre, RUT y datos de contacto para revisar tu solicitud, verificar tu identidad y administrar tu cuenta. Una ficha existente solo puede vincularse después de la verificación.</p>'+
+  '<p>Las solicitudes de registro son privadas. La contraseña se guarda mediante un hash y no puede consultarse desde el sistema. La autorización de promociones es opcional y no condiciona la creación de la cuenta.</p>'+
+  '<p>Para revisar, corregir o retirar los datos de la cuenta, solicita ayuda al personal autorizado de la óptica. Esta es una demostración académica: usa solo datos ficticios y no ingreses antecedentes clínicos reales.</p>'+
+  link('Volver al registro','registro.html'));
+}
+async function renderMyAccount(){
+ const data=await api('my-account/');
+ const rows=data.inquiries.map(r=>[esc(r.reference),esc(r.kind),esc(date(r.created_at)),badge(r.status)]);
+ return panel('Mis solicitudes',rows.length?table(['Referencia','Tipo','Fecha','Estado'],rows):note('Aún no tienes solicitudes enviadas desde esta cuenta.'))+
+  panel('Mi convenio',note(data.agreement?'Convenio vigente y validado: '+data.agreement:'No tienes un convenio vigente y validado.'))+
+  panel('Mis recetas',form('account-recipe',input('issued_on','Fecha de emisión','date')+
+   input('file','Receta privada (JPG, PNG o PDF)','file','','required accept=".jpg,.jpeg,.png,.pdf"'),'Guardar receta privada'));
+}
+
+function loginForm(){screen.innerHTML=head('Acceso a Ópticas Amaru','Ingresa con tu usuario o con el correo de tu cuenta activada.')+panel('Autenticación',form('login',input('username','Usuario o correo','text','','required autocomplete="username"')+input('password','Contraseña','password','','required autocomplete="current-password"'),'Iniciar sesión')+registrationLink);}
 function error(e){screen.innerHTML=head('No se pudo cargar esta sección')+note(e.message)+btn('Reintentar','reload');}
 async function render(){
  try{
- const publicPages=['index','catalogo','formulario_remoto','producto','carrito','portal_convenios'];
+ const publicPages=['index','catalogo','formulario_remoto','producto','carrito','portal_convenios','registro','privacidad'];
  if(!publicPages.includes(page)&&!session.authenticated){loginForm();return;}
  if(!publicPages.includes(page)&&!['consulta','recepcion','documentos','representante'].includes(page)&&!session.permissions.some(p=>p.startsWith('gestion.view_'))){screen.innerHTML=head('Acceso restringido')+link('Ir a mis pedidos','consulta.html');return;}
  if(page==='index'){screen.innerHTML=head('Una mirada clara. Una atención más cerca.','Conoce la propuesta de Ópticas Amaru y solicita orientación.')+`<section class="hero"><div><h2>Tu atención, conectada.</h2><p>Desde la primera consulta hasta el retiro de tus lentes.</p><div class="actions">${link('Solicitar atención','formulario_remoto.html')}${link('Productos y servicios','catalogo.html')}${link('Mis pedidos','consulta.html')}</div></div><img src="/static/interfaz/img/atencion_optica.svg" alt="Atención óptica" style="max-width:100%;width:400px"></section>`+note('Catálogo académico y horarios de referencia. Las solicitudes quedan registradas para revisión, sin envío automático de correos.');}
+ else if(page==='registro')await renderRegistration();
+ else if(page==='privacidad')renderPrivacy();
  else if(page==='catalogo')await renderCatalog();
  else if(page==='producto')await renderProduct();
  else if(page==='carrito')await renderCart();
@@ -55,6 +94,10 @@ async function render(){
  else if(page==='formulario_remoto')await requestForm();
  else if(page==='consulta'){
  const data=await list('orders/');screen.innerHTML=head('Mis pedidos','El servidor limita los registros a tu cuenta autenticada.')+ordersTable(data.results,true)+pages(data);
+ if(session.client_id&&!has('view_order')){
+  try{screen.insertAdjacentHTML('beforeend',await renderMyAccount());}
+  catch(e){screen.insertAdjacentHTML('beforeend',note(e.message));}
+ }
  }
  else if(page==='dashboard'){
  const results=await Promise.all(['clients/','orders/','receipts/','inquiries/'].map(p=>api(p).catch(()=>null)));
@@ -183,7 +226,7 @@ async function renderCart(){
  });
  screen.innerHTML+=panel('Productos seleccionados',table(['Producto','Cantidad','Subtotal','Receta','Acción'],rows)+note((complete?'Subtotal de referencia: ':'Subtotal de productos con precio: ')+currency(total)));
  if(invalid){screen.innerHTML+=note('Quita o reemplaza los productos y variantes que ya no están disponibles.');return;}
- if(!session.authenticated){screen.innerHTML+=panel('Identificación',note('Inicia sesión con tu cuenta de cliente para enviar esta selección.')+form('login',input('username','Usuario o correo')+input('password','Contraseña','password','','required autocomplete="current-password"'),'Iniciar sesión'));return;}
+ if(!session.authenticated){screen.innerHTML+=panel('Identificación',note('Inicia sesión con tu cuenta de cliente para enviar esta selección.')+form('login',input('username','Usuario o correo')+input('password','Contraseña','password','','required autocomplete="current-password"'),'Iniciar sesión')+registrationLink);return;}
  if(!session.client_id){screen.innerHTML+=note('Se requiere una cuenta vinculada a una ficha activa.');return;}
  const [profile,recipes]=await Promise.all([api('checkout/'),api('my-prescriptions/')]);
  const needsRecipe=items.some(i=>products.get(i.product).requires_prescription);
@@ -351,6 +394,14 @@ document.addEventListener('submit',async e=>{
  case 'cart-recipe':await api('my-prescriptions/',{method:'POST',body:new FormData(f)});await renderCart();message('Receta privada guardada. Selecciónala para continuar.');return;
  case 'checkout':{const payload={...data,items:readCart(),contact_authorized:!!data.contact_authorized,idempotency_key:f.dataset.key};if(!payload.prescription)delete payload.prescription;const result=await api('checkout/',{method:'POST',body:payload});saveCart([]);screen.innerHTML=head('Solicitud registrada','El personal revisará tu selección.')+note('Referencia: '+result.reference)+link('Volver al catálogo','catalogo.html');return;}
  case 'purchase-quote':{const prices=Object.fromEntries(Object.entries(data).filter(([key])=>key.startsWith('price_')).map(([key,value])=>[key.slice(6),Number(value)]));const result=await api('purchases/'+data.id+'/quote/',{method:'POST',body:{prices}});close();if(has('change_quote'))await quoteForm(result.id);message('Borrador creado: '+result.folio);return;}
+ case 'register':{
+   const r=await api('register/',{method:'POST',body:{...data,privacy:!!data.privacy,promotions:!!data.promotions}});
+   f.reset();screen.innerHTML=head('Solicitud recibida')+note(r.detail)+link('Volver a Iniciar sesión','consulta.html');return;
+ }
+ case 'account-recipe':{
+   await api('my-prescriptions/',{method:'POST',body:new FormData(f)});
+   f.reset();f.querySelector('.form-feedback').textContent='Receta privada guardada. Puedes elegirla al solicitar productos.';return;
+ }
  case 'login':{const r=await api('login/',{method:'POST',body:data});csrf=r.csrf;location.reload();return;}
  case 'search':location.href='clientes.html?q='+encodeURIComponent(data.q);return;
  case 'catalog-filter':{const query=new URLSearchParams(data);if(params.get('gestion')==='1')query.set('gestion','1');location.href='catalogo.html?'+query;return;}
@@ -374,6 +425,9 @@ document.addEventListener('submit',async e=>{
  }catch(err){
   if(f.dataset.form==='inquiry'&&data.kind==='agenda'&&err.status===409){
    try{await loadAvailability(f);}catch{/* Se conserva el mensaje del envío. */}
+  }
+  if(f.dataset.form==='register'&&err.status===400){
+   try{f.elements.challenge.value=(await api('register/')).challenge;}catch{/* Conserva la explicación del error original. */}
   }
   f.querySelector('.form-feedback').textContent=err.message;
  }finally{submit.disabled=false;}
@@ -419,6 +473,7 @@ document.querySelector('[data-menu]')?.addEventListener('click',e=>{const open=d
 document.querySelector('[data-public-menu]')?.addEventListener('click',e=>{const open=document.getElementById('public-nav').classList.toggle('open');e.currentTarget.setAttribute('aria-expanded',String(open));});
 (async()=>{try{
  session=await api('session/');csrf=session.csrf;
+ if(session.authenticated)document.querySelector('[data-signup-nav]')?.remove();
  const navigation={clientes:'view_client',recetas:'view_prescription',cotizaciones:'view_quote',ordenes:'view_order',recepcion:'add_receipt',documentos:'view_receipt',solicitudes:'view_inquiry',garantias:'view_warranty',inventario:'view_inventory'};
  document.querySelectorAll('.sidebar a[href]').forEach(a=>{const route=a.getAttribute('href').split('.')[0];if(navigation[route]&&!has(navigation[route]))a.hidden=true;});
  if(session.authenticated&&!has('view_order')&&['recepcion','documentos'].includes(page)){

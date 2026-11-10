@@ -1,5 +1,9 @@
 from django import forms
-from django.contrib import admin
+from django.contrib import admin, messages
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import path, reverse
+from django.utils.html import format_html
 from django.contrib.auth.models import User,Group
 from django.contrib.auth.admin import UserAdmin,GroupAdmin
 from .models import *
@@ -60,3 +64,51 @@ class AgreementRepresentativeAdmin(LoggedAdmin):
 
 admin.site.register(AgreementRepresentative, AgreementRepresentativeAdmin)
 admin.site.register(PurchaseLine, ReadOnlyAdmin)
+
+
+class VerifyClientRegistrationForm(forms.Form):
+    email_verified = forms.BooleanField(label='Comprobé que la persona controla el correo registrado')
+    identity_verified = forms.BooleanField(label='Verifiqué su identidad y su RUT')
+    note = forms.CharField(label='Referencia interna de la verificación', min_length=5, max_length=240)
+
+
+@admin.register(ClientRegistration)
+class ClientRegistrationAdmin(ReadOnlyAdmin):
+    list_display = ['id', 'name', 'created_at', 'approved_at', 'review_link']
+    list_filter = ['approved_at']
+    search_fields = ['name', 'rut', 'email']
+    readonly_fields = [field.name for field in ClientRegistration._meta.fields]
+
+    @admin.display(description='Revisión')
+    def review_link(self, obj):
+        if obj.approved_at:
+            return 'Activada'
+        return format_html('<a href="{}">Revisar activación</a>',
+                           reverse('admin:clientregistration_verify', args=[obj.pk]))
+
+    def get_urls(self):
+        return [path('<int:pk>/verificar/', self.admin_site.admin_view(self.verify),
+                     name='clientregistration_verify')] + super().get_urls()
+
+    def verify(self, request, pk):
+        from .registration import REVIEW_PERMISSION, approve_registration
+
+        if not request.user.has_perm(REVIEW_PERMISSION):
+            raise PermissionDenied
+        registration = get_object_or_404(ClientRegistration, pk=pk)
+        if registration.approved_at:
+            return redirect('admin:gestion_clientregistration_change', registration.pk)
+        form = VerifyClientRegistrationForm(request.POST if request.method == 'POST' else None)
+        if request.method == 'POST' and form.is_valid():
+            try:
+                approve_registration(pk, request.user, **form.cleaned_data)
+            except ValidationError as exc:
+                form.add_error(None, exc)
+            else:
+                self.message_user(request, 'Cuenta de cliente activada.', messages.SUCCESS)
+                return redirect('admin:gestion_clientregistration_changelist')
+        return render(request, 'admin/gestion/clientregistration/verify.html', {
+            **self.admin_site.each_context(request), 'title': 'Verificar solicitud de cuenta',
+            'registration': registration, 'client': Client.objects.filter(rut=registration.rut).first(),
+            'form': form,
+        })

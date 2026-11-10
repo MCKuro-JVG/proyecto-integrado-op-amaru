@@ -1,0 +1,19 @@
+{% extends 'admin/base_site.html' %}
+{% block content %}
+<h1>{{ title }}</h1>
+<p>Cuenta solicitada por {{ registration.name }} · RUT {{ registration.rut }} · {{ registration.email }}</p>
+{% if client %}
+<p>Existe una ficha para este RUT. Si se autoriza el vínculo, se conservarán sus datos y preferencias actuales.</p>
+{% else %}
+<p>No existe una ficha para este RUT. Se creará al activar la cuenta.</p>
+{% endif %}
+<p>Confirma el control del correo por un canal institucional y coteja presencialmente la identidad y el RUT. No registres códigos, contraseñas ni copias de documentos.</p>
+<form method="post">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <div class="submit-row">
+    <input type="submit" value="Activar cuenta verificada" class="default">
+    <a href="{% url 'admin:gestion_clientregistration_changelist' %}">Volver a las solicitudes</a>
+  </div>
+</form>
+{% endblock %}
