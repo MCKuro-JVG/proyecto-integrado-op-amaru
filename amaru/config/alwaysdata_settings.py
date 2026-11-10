@@ -31,6 +31,12 @@ if len(os.environ["DJANGO_SECRET_KEY"]) < 50:
 
 from .settings import *  # noqa: E402,F403
 
+# MariaDB exige TLS para el usuario de la aplicación. Comprueba también el hostname.
+DATABASES['default']['OPTIONS'].update(
+    ssl_mode='VERIFY_IDENTITY',
+    ssl={'ca': os.getenv('ALWAYSDATA_DB_CA', '/etc/ssl/certs/ca-certificates.crt')},
+)
+
 DEBUG = False
 ALLOWED_HOSTS = [host]
 PUBLIC_BASE_URL = ATTENTION_PUBLIC_BASE_URL = f"https://{host}"
