@@ -73,11 +73,33 @@ class Products(Records):
     serializer_class=ProductSerializer
     def get_permissions(self):
         return [permissions.AllowAny()] if self.request.method in ('GET','HEAD','OPTIONS') else super().get_permissions()
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        response['Cache-Control'] = 'private, no-store'
+        return response
+
     def get_queryset(self):
-        return catalog_query(super().get_queryset().filter(active=True), self.request)
+        from .unions import membership_for
+        user = self.request.user
+        client = Client.objects.filter(user=user, active=True).first() if user.is_authenticated else None
+        queryset = super().get_queryset().filter(active=True)
+        mining = self.request.query_params.get('scope') == 'mining'
+        if mining:
+            if not client or not membership_for(client):
+                raise PermissionDenied('El catálogo minero requiere una afiliación vigente.')
+            queryset = queryset.filter(mining_only=True)
+        elif (not self.kwargs.get('pk') and not self.request.query_params.get('ids')) or not client or not membership_for(client):
+            queryset = queryset.filter(mining_only=False)
+        return catalog_query(queryset, self.request)
     @action(detail=True,methods=['get'])
     def image(self,request,pk=None):
         product=self.get_object()
+        if product.mining_only:
+            if not product.mining_image:
+                return Response(status=404)
+            response = FileResponse(product.mining_image.open('rb'), content_type='image/png' if product.mining_image.name.lower().endswith('.png') else 'image/jpeg')
+            response['Cache-Control'] = 'private, no-store'
+            return response
         if not product.image: return Response(status=404)
         if settings.R2_ENABLED: return redirect(product.image.url)
         return FileResponse(product.image.open('rb'),content_type='image/png' if product.image.name.lower().endswith('.png') else 'image/jpeg')
@@ -105,6 +127,16 @@ class CatalogManagement(Records):
 
     def get_queryset(self):
         return catalog_query(super().get_queryset(), self.request)
+
+    @action(detail=True, methods=['get'])
+    def image(self, request, pk=None):
+        product = self.get_object()
+        image = product.mining_image if product.mining_only else product.image
+        if not image:
+            return Response(status=404)
+        response = FileResponse(image.open('rb'), content_type='image/png' if image.name.lower().endswith('.png') else 'image/jpeg')
+        response['Cache-Control'] = 'private, no-store'
+        return response
 
 
 class Quotes(Records):
@@ -151,7 +183,7 @@ class Orders(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         qs=self.queryset.order_by('-pk')
         u=self.request.user
-        if not u.has_perm('gestion.view_order'): qs=qs.filter(client__user=u)
+        if not u.has_perm('gestion.view_order'): qs=qs.filter(client__user=u, client__active=True)
         state=self.request.query_params.get('status')
         return qs.filter(status=state) if state else qs
     @action(detail=True,methods=['post'])
@@ -163,6 +195,8 @@ class Orders(viewsets.ReadOnlyModelViewSet):
             if obj.status=='Entregada' or not isinstance(value,str) or value not in dict(Order.STATES) or value=='Entregada':
                 raise ValidationError('Estado inválido. La entrega se registra desde el documento.')
             before=obj.status;obj.status=value;obj.save()
+            from .pickup import sync_order_state
+            sync_order_state(obj, before, request.user)
             audit(request.user,f'{before} → {value}',obj)
         return Response(self.get_serializer(obj).data)
     @action(detail=True,methods=['get'])
@@ -172,7 +206,8 @@ class Orders(viewsets.ReadOnlyModelViewSet):
             raise PermissionDenied()
         config=SiteConfiguration.objects.first()
         terms=config.warranty_terms if config else SiteConfiguration._meta.get_field('warranty_terms').get_default()
-        payload={'order':obj.pk,'terms':terms,'client':obj.client.name,'rut':obj.client.rut,
+        from .pickup import requires_pickup
+        payload={'pickup_required': requires_pickup(obj), 'order':obj.pk,'terms':terms,'client':obj.client.name,'rut':obj.client.rut,
                  'product':obj.characteristics,'status':obj.status,'updated':obj.updated_at.isoformat()}
         # Sello del servidor: evita confirmar condiciones distintas de las revisadas.
         return Response({**payload,'review_token':signing.dumps(payload,salt='delivery-review')})
@@ -190,9 +225,12 @@ class Orders(viewsets.ReadOnlyModelViewSet):
         if request.data.get('accepted') is not True: raise ValidationError('Debe confirmar la recepción.')
         signature=request.data.get('signature','')
         if not signature: raise ValidationError('Dibuje la firma simple de recepción.')
+        pickup_proof=request.data.get('pickup_proof','')
+        if not isinstance(pickup_proof,str) or len(pickup_proof)>2000:
+            raise ValidationError('La validación del retiro no es válida.')
         try:
             receipt=accept_receipt(obj.pk,request.user,True,signature,terms=reviewed['terms'],
-                expected_updated=reviewed['updated'],observations=request.data.get('observations',''))
+                expected_updated=reviewed['updated'],observations=request.data.get('observations',''),pickup_proof=pickup_proof)
         except DjangoValidationError as exc: raise ValidationError(exc.messages)
         except Exception:
             logger.exception('Entrega no completada para OT %s',obj.pk)
@@ -302,7 +340,7 @@ class Inventories(Records):
 
 
 class Agreements(Records):
-    queryset=Agreement.objects.all()
+    queryset=Agreement.objects.select_related('union')
     serializer_class=AgreementSerializer
 
     @action(detail=True, methods=['get'])
@@ -314,7 +352,7 @@ class Agreements(Records):
 
         agreement = self.get_object()
         base = public_configuration(request)['url']
-        if not base or not agreement.code or not agreement.available:
+        if not base or not agreement.code or not agreement.available or agreement.has_managed_union:
             raise ValidationError('Se requiere un convenio vigente con código y una dirección HTTPS configurada.')
         url = base.split('?', 1)[0] + '?' + urlencode({'origen': 'qr', 'convenio': agreement.code})
         if request.query_params.get('image') == 'png':
@@ -361,6 +399,8 @@ def review_membership(user, pk, values, organization_id=None):
         if organization_id is not None and not agreement.available:
             raise PermissionDenied('El convenio no está vigente.')
         if values['approved']:
+            if hasattr(agreement, 'union'):
+                raise ValidationError('Gestiona la vinculación desde el Panel del Sindicato.')
             if not agreement.available or (inquiry.agreement_role == 'carga' and not agreement.allow_dependents):
                 raise ValidationError('El convenio no admite esta aprobación actualmente.')
             client = get_object_or_404(Client.objects.select_for_update(), pk=inquiry.client_id)
@@ -384,6 +424,15 @@ def client_agreement(request, pk):
     if not request.user.has_perms(['gestion.view_client', 'gestion.view_agreement']):
         raise PermissionDenied()
     client = get_object_or_404(Client.objects.select_related('agreement'), pk=pk)
+    from .unions import membership_for
+    membership = membership_for(client)
+    if request.method == 'GET' and membership:
+        return Response({'agreement': membership.union.agreement.name, 'available': True,
+                         'verified': True, 'role': membership.role, 'pending': False})
+    pending = client.union_memberships.select_related('union__agreement').order_by('-changed_at').first()
+    if request.method == 'GET' and pending:
+        return Response({'agreement': pending.union.agreement.name, 'available': pending.union.agreement.available,
+                         'verified': False, 'role': pending.role, 'pending': pending.state == 'pending'})
     latest = client.inquiries.filter(agreement_id=client.agreement_id, verification_state='aprobada').order_by('-verified_at').first() if client.agreement_id else None
     if request.method == 'POST':
         if not request.user.has_perm('gestion.add_request'):
@@ -403,8 +452,11 @@ def session(request):
     user=request.user
     client=Client.objects.filter(user=user).first() if user.is_authenticated else None
     from .membership import representative_for
+    from .unions import membership_for, representative_union
+    union = representative_union(user) if user.is_authenticated else None
+    membership = membership_for(client) if client and client.active else None
     representative = representative_for(user) if user.is_authenticated else None
-    response=Response({'representative': bool(representative), 'authenticated':user.is_authenticated,'username':user.get_username() if user.is_authenticated else None,
+    response=Response({'union': bool(union), 'mining': bool(membership), 'representative': bool(representative), 'authenticated':user.is_authenticated,'username':user.get_username() if user.is_authenticated else None,
         'client_id':client.pk if client else None,'permissions':sorted(user.get_all_permissions()) if user.is_authenticated else [],
         'csrf':token,'storage':'r2' if settings.R2_ENABLED else 'local-private'})
     response['Cache-Control']='no-store'

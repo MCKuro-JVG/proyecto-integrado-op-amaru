@@ -18,8 +18,15 @@ class Agreement(models.Model):
     allow_dependents = models.BooleanField(default=False)
 
     @property
+    def has_managed_union(self):
+        return hasattr(self, 'union')
+
+    @property
     def available(self):
         today = timezone.localdate()
+        union = getattr(self, 'union', None)
+        if union is not None and union.state != 'active':
+            return False
         return self.active and (not self.starts_on or self.starts_on <= today) and (not self.ends_on or self.ends_on >= today)
 
     def save(self, *args, **kwargs):
@@ -247,6 +254,10 @@ def public_image_path(instance,filename):
     return f'catalogo/{uuid.uuid4().hex}{Path(filename).suffix.lower()}'
 
 
+def mining_image_path(instance, filename):
+    return f'catalogo-minero/{uuid.uuid4().hex}{Path(filename).suffix.lower()}'
+
+
 class Product(models.Model):
     """Catálogo público. Las características clínicas siguen en cada cotización/OT."""
     sku=models.CharField(max_length=60,unique=True)
@@ -260,6 +271,8 @@ class Product(models.Model):
     variants = models.JSONField(default=list, blank=True)
     reference_price = models.PositiveIntegerField(null=True, blank=True)
     requires_prescription = models.BooleanField(default=False)
+    mining_only = models.BooleanField(default=False)
+    mining_image = models.ImageField(upload_to=mining_image_path, storage=private_storage, blank=True)
     image=models.ImageField(upload_to=public_image_path,storage=public_storage,blank=True,validators=[validate_document])
     active=models.BooleanField(default=True)
     created_at=models.DateTimeField(auto_now_add=True)
@@ -350,3 +363,109 @@ class DeliveryAttempt(models.Model):
     signature_key=models.CharField(max_length=250,blank=True)
     created_at=models.DateTimeField(auto_now_add=True)
     updated_at=models.DateTimeField(auto_now=True)
+
+
+class Union(models.Model):
+    class State(models.TextChoices):
+        PENDING = 'pending', 'Pendiente'
+        ACTIVE = 'active', 'Activo'
+        SUSPENDED = 'suspended', 'Suspendido'
+
+    agreement = models.OneToOneField(Agreement, on_delete=models.PROTECT, related_name='union')
+    identifier = models.SlugField(max_length=40, unique=True)
+    institutional_details = models.TextField(blank=True, max_length=1000)
+    state = models.CharField(max_length=12, choices=State, default=State.PENDING)
+    activated_at = models.DateTimeField(null=True, blank=True)
+    activated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True)
+    review_note = models.CharField(max_length=240, blank=True)
+
+    def __str__(self):
+        return self.agreement.name
+
+
+def union_document_path(instance, filename):
+    return f'convenios/{instance.union_id}/{uuid.uuid4().hex}.pdf'
+
+
+class UnionDocument(models.Model):
+    union = models.ForeignKey(Union, on_delete=models.PROTECT, related_name='documents')
+    version = models.PositiveIntegerField()
+    file = models.FileField(upload_to=union_document_path, storage=private_storage)
+    sha256 = models.CharField(max_length=64)
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    signed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name='+')
+    signed_at = models.DateTimeField(null=True, blank=True)
+    signer_name = models.CharField(max_length=180, blank=True)
+    organization_name = models.CharField(max_length=180, blank=True)
+    acceptance = models.CharField(max_length=240, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['union', 'version'], name='unique_union_document_version')]
+
+
+class UnionMembership(models.Model):
+    class State(models.TextChoices):
+        PENDING = 'pending', 'Pendiente'
+        ACTIVE = 'active', 'Activa'
+        INACTIVE = 'inactive', 'Inactiva'
+
+    union = models.ForeignKey(Union, on_delete=models.PROTECT, related_name='memberships')
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, null=True, related_name='union_memberships')
+    rut = models.CharField(max_length=12)
+    name = models.CharField(max_length=180)
+    email = models.EmailField(max_length=150)
+    phone = models.CharField(max_length=30)
+    role = models.CharField(max_length=10, choices=[('titular', 'Titular'), ('carga', 'Carga familiar')])
+    state = models.CharField(max_length=10, choices=State, default=State.PENDING)
+    created_at = models.DateTimeField(auto_now_add=True)
+    changed_at = models.DateTimeField(auto_now=True)
+    verified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name='+')
+    verification_note = models.CharField(max_length=240, blank=True)
+    accepted_at = models.DateTimeField(null=True)
+    recovery_requested_at = models.DateTimeField(null=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['union', 'rut'], name='union_membership_unique_rut'),
+            models.UniqueConstraint(fields=['union', 'email'], name='union_membership_unique_email'),
+        ]
+        indexes = [models.Index(fields=['union', 'state'], name='union_membership_state')]
+
+
+class AccessInvitation(models.Model):
+    class Purpose(models.TextChoices):
+        REPRESENTATIVE = 'representative', 'Representante'
+        WORKER = 'worker', 'Trabajador'
+        RECOVERY = 'recovery', 'Recuperación'
+
+    purpose = models.CharField(max_length=16, choices=Purpose)
+    union = models.ForeignKey(Union, on_delete=models.PROTECT, related_name='invitations')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name='+')
+    membership = models.ForeignKey(UnionMembership, on_delete=models.PROTECT, null=True, related_name='invitations')
+    digest = models.CharField(max_length=64, unique=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True)
+    revoked_at = models.DateTimeField(null=True)
+
+    class Meta:
+        indexes = [models.Index(fields=['union', 'purpose'], name='union_invite_purpose')]
+        constraints = [models.CheckConstraint(
+            condition=(models.Q(purpose='representative', user__isnull=False, membership__isnull=True)
+                       | models.Q(purpose='worker', user__isnull=True, membership__isnull=False)
+                       | models.Q(purpose='recovery', user__isnull=False, membership__isnull=False)),
+            name='union_invite_target',
+        )]
+
+
+class PickupCode(models.Model):
+    order = models.OneToOneField(Order, on_delete=models.PROTECT, related_name='pickup_code')
+    nonce = models.UUIDField(default=uuid.uuid4, editable=False)
+    digest = models.CharField(max_length=64, unique=True)
+    generated_at = models.DateTimeField(default=timezone.now)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True)
+    used_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name='+')
+    revoked_at = models.DateTimeField(null=True)

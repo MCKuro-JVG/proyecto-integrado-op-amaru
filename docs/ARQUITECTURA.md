@@ -54,3 +54,9 @@ Las reglas EPS se materializan parcialmente en autenticación, permisos, validac
 ## Límites conservados
 
 La agenda registra solicitudes, no confirma citas con la empresa ni envía mensajes. Catálogo/precios de ejemplo no son comerciales. No se trasladan datos de localStorage ni PostgreSQL sin una migración revisada. La versión estática alojada anteriormente continúa siendo DEMO; publicar un backend exige un hosting con Python y acceso a MariaDB/R2.
+
+## Sindicatos y códigos de retiro
+
+`Union` amplía `Agreement` en una relación 1:1 y reutiliza `AgreementRepresentative` para identificar a la cuenta institucional. `UnionDocument` conserva versiones privadas y evidencia de aceptación. `UnionMembership` separa la afiliación de la ficha personal `Client`. `AccessInvitation` guarda el hash y la vigencia de cada enlace individual. La elegibilidad minera requiere afiliación activa y convenio vigente y se comprueba en catálogo, imágenes, solicitudes y carrito. Las solicitudes y cotizaciones conservan el convenio de origen.
+
+`PickupCode` mantiene una emisión vigente por orden. Una autorización temporal vincula la validación del vendedor con esa emisión. El bloqueo de la orden protege la creación del comprobante, el consumo del código y el cambio de estado dentro de la misma transacción. La migración 0011 crea los nuevos modelos y campos. La 0012 migra el grupo Personal de atención a Vendedor conservando usuarios y permisos. [Proceso y demostración](SINDICATOS_RETIRO.md)

@@ -37,7 +37,14 @@ class LoggedGroupAdmin(GroupAdmin,LoggedAdmin):pass
 admin.site.unregister(User);admin.site.register(User,LoggedUserAdmin)
 admin.site.unregister(Group);admin.site.register(Group,LoggedGroupAdmin)
 admin.site.register(Client,ClientAdmin)
-for m in [Agreement,Inventory,SiteConfiguration]:admin.site.register(m,LoggedAdmin)
+for m in [Inventory,SiteConfiguration]:admin.site.register(m,LoggedAdmin)
+
+
+@admin.register(Agreement)
+class AgreementAdmin(LoggedAdmin):
+    def has_change_permission(self, request, obj=None):
+        return (not obj or not obj.has_managed_union) and super().has_change_permission(request, obj)
+
 for m in [Prescription,Request,Quote,Order,Warranty,Receipt,Consent]:admin.site.register(m,ReadOnlyAdmin)
 admin.site.register(Audit,AuditAdmin)
 admin.site.register(Product,LoggedAdmin)
@@ -64,6 +71,16 @@ class AgreementRepresentativeAdmin(LoggedAdmin):
 
 admin.site.register(AgreementRepresentative, AgreementRepresentativeAdmin)
 admin.site.register(PurchaseLine, ReadOnlyAdmin)
+
+
+@admin.register(Union, UnionDocument, UnionMembership, AccessInvitation, PickupCode)
+class UnionEvidenceAdmin(ReadOnlyAdmin):
+    def get_readonly_fields(self, request, obj=None):
+        return [field.name for field in self.model._meta.fields if field.name not in ('file', 'digest', 'nonce')]
+
+    def get_fields(self, request, obj=None):
+        return self.get_readonly_fields(request, obj)
+
 
 
 class VerifyClientRegistrationForm(forms.Form):

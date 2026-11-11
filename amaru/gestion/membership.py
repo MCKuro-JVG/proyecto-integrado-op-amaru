@@ -11,9 +11,13 @@ from .api import VerificationInput, review_membership
 from .models import AgreementRepresentative, Inquiry
 
 
-def verified_agreement(client):
+def verified_agreement(client, *, lock=False):
+    from .unions import membership_for
+    membership = membership_for(client, lock=lock)
+    if membership:
+        return membership.union.agreement
     agreement = client.agreement
-    if agreement is None or not agreement.available:
+    if agreement is None or not agreement.available or hasattr(agreement, 'union'):
         return None
     approval = client.inquiries.filter(agreement=agreement).exclude(verification_state='').order_by('-created_at', '-pk').first()
     if approval and approval.verification_state == 'aprobada' and (approval.agreement_role != 'carga' or agreement.allow_dependents):
@@ -46,7 +50,7 @@ def status(request):
 @api_view(['GET'])
 def queue(request):
     representative = representative_for(request.user)
-    if representative is None or not representative.agreement.available:
+    if representative is None or not representative.agreement.available or hasattr(representative.agreement, 'union'):
         raise PermissionDenied()
     rows = Inquiry.objects.filter(agreement=representative.agreement).exclude(verification_state='').order_by('-created_at', '-pk')[:100]
     return Response({'organization': representative.agreement.name, 'requests': [summary(row) for row in rows]})

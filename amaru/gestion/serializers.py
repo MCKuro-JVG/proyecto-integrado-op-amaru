@@ -46,9 +46,28 @@ class ProductSerializer(serializers.ModelSerializer):
     image=serializers.ImageField(write_only=True,required=False)
     class Meta:
         model=Product
-        fields=['id','sku','name','category','description','lens_type','variants','crystal','treatments','color','reference_price','requires_prescription','image','image_url','active']
+        fields=['id','sku','name','category','description','lens_type','variants','crystal','treatments','color','reference_price','requires_prescription','image','image_url','active','mining_only']
     def get_image_url(self,obj):
-        return f'/api/products/{obj.pk}/image/' if obj.image else None
+        view = self.context.get('view')
+        prefix = 'catalog-management' if view and view.basename == 'catalog-management' else 'products'
+        return f'/api/{prefix}/{obj.pk}/image/' if (obj.mining_image if obj.mining_only else obj.image) else None
+
+    def image_fields(self, data, instance=None):
+        upload = data.pop('image', None)
+        mining = data.get('mining_only', getattr(instance, 'mining_only', False))
+        if instance and mining != instance.mining_only:
+            data['image'] = ''
+            data['mining_image'] = ''
+        if upload:
+            data['mining_image' if mining else 'image'] = upload
+        return data
+
+    def create(self, validated_data):
+        return super().create(self.image_fields(validated_data))
+
+    def update(self, instance, validated_data):
+        return super().update(instance, self.image_fields(validated_data, instance))
+
     def validate_variants(self, value):
         if not isinstance(value, list) or len(value) > 20 or any(not isinstance(v, str) or not 1 <= len(v.strip()) <= 80 for v in value):
             raise serializers.ValidationError('Indica hasta 20 variantes de entre 1 y 80 caracteres.')
@@ -95,6 +114,15 @@ class QuoteSerializer(serializers.ModelSerializer):
         if category=='convenio' and not data.get('agreement',getattr(self.instance,'agreement',None)):
             raise serializers.ValidationError('Seleccione convenio.')
         if category=='particular': data['agreement']=None
+        agreement = data.get('agreement', getattr(self.instance, 'agreement', None))
+        previous = getattr(self.instance, 'agreement', None)
+        if previous and hasattr(previous, 'union') and (agreement != previous or client != self.instance.client):
+            raise serializers.ValidationError('La cotización conserva su titular y convenio de origen.')
+        if agreement and hasattr(agreement, 'union') and not (self.instance and previous == agreement):
+            from .unions import membership_for
+            member = membership_for(client)
+            if not member or member.union.agreement_id != agreement.pk:
+                raise serializers.ValidationError('El cliente no tiene una afiliación vigente para este convenio.')
         chars=data.get('characteristics',getattr(self.instance,'characteristics',{}))
         if not isinstance(chars,dict) or len(str(chars))>4000: raise serializers.ValidationError('Características inválidas.')
         product_type=data.get('product_type',getattr(self.instance,'product_type',None))
@@ -161,7 +189,7 @@ class InquirySerializer(serializers.ModelSerializer):
         role = data.get("agreement_role", "")
         if code:
             agreement = Agreement.objects.filter(code=code).first()
-            if data["kind"] != "registro" or not agreement or not agreement.available:
+            if data["kind"] != "registro" or not agreement or not agreement.available or hasattr(agreement, "union"):
                 raise serializers.ValidationError({"agreement_code": "El convenio no está disponible para este registro."})
             if role not in ("titular", "carga") or (role == "carga" and not agreement.allow_dependents):
                 raise serializers.ValidationError({"agreement_role": "Selecciona una calidad permitida para el convenio."})
@@ -192,12 +220,16 @@ class InventorySerializer(serializers.ModelSerializer):
 
 
 class AgreementSerializer(serializers.ModelSerializer):
+    managed_union = serializers.BooleanField(read_only=True, source='has_managed_union')
+
     class Meta:
         model=Agreement
-        fields = ['id', 'name', 'active', 'code', 'starts_on', 'ends_on', 'contact_name', 'contact_email', 'allow_dependents', 'available']
+        fields = ['id', 'name', 'active', 'code', 'starts_on', 'ends_on', 'contact_name', 'contact_email', 'allow_dependents', 'available', 'managed_union']
         read_only_fields = ['code', 'available']
 
     def validate(self, data):
+        if self.instance and self.instance.has_managed_union:
+            raise serializers.ValidationError('Administra este convenio desde Gestión de sindicatos.')
         start = data.get('starts_on', getattr(self.instance, 'starts_on', None))
         end = data.get('ends_on', getattr(self.instance, 'ends_on', None))
         if start and end and end < start:

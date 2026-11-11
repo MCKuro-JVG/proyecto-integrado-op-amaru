@@ -55,6 +55,7 @@ def checkout(request):
 
 @transaction.atomic
 def register(client, user, values):
+    agreement = verified_agreement(client, lock=True)
     client = Client.objects.select_for_update().get(pk=client.pk)
     if not client.active or client.user_id != user.pk:
         raise PermissionDenied()
@@ -66,6 +67,8 @@ def register(client, user, values):
     products = Product.objects.select_for_update().filter(pk__in={x['product'] for x in selections}, active=True).order_by('pk').in_bulk()
     if len(products) != len({x['product'] for x in selections}):
         raise Conflict('Un producto dejó de estar disponible. Revisa el carrito.')
+    if any(product.mining_only for product in products.values()) and not (agreement and hasattr(agreement, 'union')):
+        raise PermissionDenied('Se requiere una afiliación sindical vigente para estos productos.')
     recipe = None
     if values.get('prescription'):
         recipe = get_object_or_404(Prescription, pk=values['prescription'], client=client)
@@ -83,7 +86,7 @@ def register(client, user, values):
             characteristics={field: getattr(product, field) for field in ('sku', 'category', 'lens_type', 'crystal', 'color', 'treatments', 'requires_prescription')}))
     row, created = Inquiry.objects.get_or_create(idempotency_key=values['idempotency_key'], defaults={
         'kind': 'compra', 'client': client, 'name': client.name, 'phone': client.phone, 'email': client.email,
-        'purchase_mode': values['mode'], 'prescription': recipe, 'agreement': verified_agreement(client),
+        'purchase_mode': values['mode'], 'prescription': recipe, 'agreement': agreement,
         'reason': values['reason'], 'service': 'Solicitud de catálogo', 'contact_authorized': True, 'actor': user,
     })
     if not created:
@@ -142,9 +145,11 @@ def quote(request, pk):
         total = sum(line.quantity * price for line, price in zip(lines, prices))
         if total > 999999999999:
             raise ValidationError('El monto supera el máximo de una cotización.')
-        agreement = verified_agreement(row.client)
-        if agreement is not None and agreement.pk != row.agreement_id:
-            agreement = None
+        # La afiliación se comprobó al enviar la solicitud. Su referencia histórica se conserva.
+        agreement = row.agreement
+        if agreement and not hasattr(agreement, 'union'):
+            current = verified_agreement(row.client)
+            agreement = agreement if current and current.pk == agreement.pk else None
         mode = 'seguridad' if all(line.characteristics['category']=='seguridad' for line in lines) else 'particular'
         quote = Quote.objects.create(client=row.client, prescription=row.prescription, actor=request.user,
             agreement=agreement, category='convenio' if agreement else 'particular', product_type=mode,

@@ -83,3 +83,7 @@ ATTENTION_RATE_LIMIT = 15
 PRESCRIPTION_VALIDITY_DAYS = int(os.environ["PRESCRIPTION_VALIDITY_DAYS"]) if os.getenv("PRESCRIPTION_VALIDITY_DAYS") else None
 if PRESCRIPTION_VALIDITY_DAYS is not None and not 1 <= PRESCRIPTION_VALIDITY_DAYS <= 3650:
     raise ValueError("PRESCRIPTION_VALIDITY_DAYS debe estar entre 1 y 3650.")
+
+# Vigencias de acceso y entrega. El perfil académico usa documentos de prueba.
+UNION_INVITE_HOURS = max(1, min(72, int(os.getenv('UNION_INVITE_HOURS', '24'))))
+PICKUP_CODE_HOURS = max(1, min(720, int(os.getenv('PICKUP_CODE_HOURS', '168'))))

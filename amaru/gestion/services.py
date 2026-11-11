@@ -35,14 +35,18 @@ def convert_quote(quote_id,user,inventory_id=None):
         q.request.status='Derivada a Orden de Trabajo';q.request.save();audit(user,'Derivación a OT',q.request)
     audit(user,'Creación de OT · Registrada',o)
     return o
-def accept_receipt(order_id,user,accepted,signature,terms=None,expected_updated=None,observations=''):
+def accept_receipt(order_id,user,accepted,signature,terms=None,expected_updated=None,observations='',pickup_proof=''):
     existing=Receipt.objects.filter(order_id=order_id).first()
-    if existing:return existing
+    if existing:
+        from .pickup import requires_pickup
+        if pickup_proof or requires_pickup(existing.order):
+            raise ValidationError('La entrega ya está completada.')
+        return existing
     key=uuid.uuid4()
     attempt=DeliveryAttempt.objects.create(key=key,order_id=order_id,
         pdf_key=f'comprobantes/{key.hex}.pdf',signature_key=f'firmas/{key.hex}.png' if signature else '')
     try:
-        receipt=_accept_receipt_atomic(order_id,user,accepted,signature,attempt,terms,expected_updated,observations)
+        receipt=_accept_receipt_atomic(order_id,user,accepted,signature,attempt,terms,expected_updated,observations,pickup_proof)
     except Exception:
         cleaned=True
         for field,name in [('pdf',attempt.pdf_key),('signature',attempt.signature_key)]:
@@ -60,9 +64,13 @@ def accept_receipt(order_id,user,accepted,signature,terms=None,expected_updated=
 
 
 @transaction.atomic
-def _accept_receipt_atomic(order_id,user,accepted,signature,attempt,terms,expected_updated,observations):
+def _accept_receipt_atomic(order_id,user,accepted,signature,attempt,terms,expected_updated,observations,pickup_proof):
     order=Order.objects.select_for_update().get(pk=order_id)
-    if Receipt.objects.filter(order=order).exists(): return Receipt.objects.get(order=order)
+    from .pickup import consume_locked, requires_pickup
+    if Receipt.objects.filter(order=order).exists():
+        if pickup_proof or requires_pickup(order):
+            raise ValidationError('La entrega ya está completada.')
+        return Receipt.objects.get(order=order)
     if expected_updated and order.updated_at.isoformat()!=expected_updated: raise ValidationError('El pedido cambió. Revise nuevamente el documento.')
     if order.status!='Disponible para retiro': raise ValidationError('La OT debe estar disponible para retiro.')
     if not accepted and not signature: raise ValidationError('Dibuje su firma o marque Recibí Conforme.')
@@ -81,6 +89,7 @@ def _accept_receipt_atomic(order_id,user,accepted,signature,attempt,terms,expect
             if not bounds or bounds[2]-bounds[0]<8 or bounds[3]-bounds[1]<3:raise ValueError()
             content=raw
         except Exception: raise ValidationError('La firma no es una imagen PNG válida.')
+    consume_locked(order, user, pickup_proof)
     config=SiteConfiguration.objects.first() or SiteConfiguration.objects.create()
     receipt=Receipt.objects.create(order=order,method='Firma en pantalla' if content else 'Recibí Conforme',terms=terms if terms is not None else config.warranty_terms,observations=str(observations)[:2000],actor=user)
     if content:
@@ -127,7 +136,7 @@ def receive_inquiry(data,actor):
     defaults = dict(data)
     if data.get("agreement"):
         agreement = Agreement.objects.select_for_update().get(pk=data["agreement"].pk)
-        if not agreement.available or (data.get("agreement_role") == "carga" and not agreement.allow_dependents):
+        if agreement.has_managed_union or not agreement.available or (data.get("agreement_role") == "carga" and not agreement.allow_dependents):
             raise Conflict("El convenio ya no está disponible para este registro.")
         defaults["verification_state"] = "pendiente"
     obj,created=Inquiry.objects.get_or_create(idempotency_key=data['idempotency_key'],defaults=defaults)

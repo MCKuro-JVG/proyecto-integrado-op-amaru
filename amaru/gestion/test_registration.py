@@ -23,7 +23,7 @@ class ClientRegistrationTests(TestCase):
         self.reviewer = User.objects.create_user('administracion', is_staff=True)
         self.reviewer.groups.add(Group.objects.get(name='Administrador'))
         self.staff = User.objects.create_user('personal', is_staff=True)
-        self.staff.groups.add(Group.objects.get(name='Personal de atención'))
+        self.staff.groups.add(Group.objects.get(name='Vendedor'))
 
     def challenge(self, issued=None):
         return signing.dumps({'issued': time.time()-3 if issued is None else issued}, salt=CHALLENGE_SALT)

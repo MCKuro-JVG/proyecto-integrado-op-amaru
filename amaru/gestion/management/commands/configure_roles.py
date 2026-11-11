@@ -7,7 +7,7 @@ class Command(BaseCommand):
     def handle(self,*args,**options):
         policies={
             'Administrador':None,
-            'Personal de atención':{
+            'Vendedor':{
                 'client':['view','add','change'],'prescription':['view','add'],
                 'quote':['view','add','change'],'order':['view','add','change'],
                 'warranty':['view','add','change'],'receipt':['view','add'],
@@ -15,6 +15,7 @@ class Command(BaseCommand):
                 'agreement':['view'],'product':['view','add','change'],'request':['view','add','change']},
             'Taller':{'order':['view','change'],'warranty':['view','change'],'inventory':['view']},
             'Cliente':{},
+            'Sindicato':{},
         }
         for name,policy in policies.items():
             group,_=Group.objects.get_or_create(name=name)

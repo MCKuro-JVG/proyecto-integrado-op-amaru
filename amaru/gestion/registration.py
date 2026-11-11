@@ -190,6 +190,8 @@ def approve_registration(registration_id, reviewer, *, email_verified, identity_
     registration.save(update_fields=['approved_at', 'approved_by', 'verification_note'])
     user.is_active = True
     user.save(update_fields=['is_active'])
+    from django.contrib.auth.models import Group
+    user.groups.add(Group.objects.get_or_create(name='Cliente')[0])
     audit(reviewer, 'Activación de cuenta con correo e identidad verificados', registration)
     return client
 
@@ -198,6 +200,10 @@ def approve_registration(registration_id, reviewer, *, email_verified, identity_
 def my_account(request):
     client = own_client(request.user)
     agreement = verified_agreement(client)
+    from .models import Quote
+    from .unions import agreement_open
+    memberships = client.union_memberships.select_related('union__agreement').order_by('-changed_at')[:30]
+    quotes = Quote.objects.filter(client=client).order_by('-pk')[:50]
     # Solo el estado de solicitudes creadas desde esta cuenta, no formularios anónimos que citan el RUT.
     inquiries = client.inquiries.filter(actor=request.user).order_by('-created_at', '-pk')[:50]
     result = Response({
@@ -206,6 +212,10 @@ def my_account(request):
             for row in inquiries
         ],
         'agreement': str(agreement) if agreement else None,
+        'memberships': [{'organization': row.union.agreement.name, 'state': row.state,
+                         'role': row.role, 'available': row.state == 'active' and agreement_open(row.union)
+                         and (row.role != 'carga' or row.union.agreement.allow_dependents)} for row in memberships],
+        'quotes': [{'folio': row.folio, 'amount': row.amount, 'approved': row.approved} for row in quotes],
     })
     result['Cache-Control'] = 'no-store'
     return result

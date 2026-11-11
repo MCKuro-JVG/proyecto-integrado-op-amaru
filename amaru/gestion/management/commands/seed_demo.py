@@ -15,7 +15,7 @@ class Command(BaseCommand):
     def handle(self,*args,**kwargs):
         admin,_=Group.objects.get_or_create(name='Administrador')
         admin.permissions.set(Permission.objects.filter(content_type__app_label__in=['gestion','auth','admin']))
-        staff,_=Group.objects.get_or_create(name='Personal de atención')
+        staff,_=Group.objects.get_or_create(name='Vendedor')
         staff.permissions.set(Permission.objects.filter(content_type__app_label='gestion').exclude(codename__startswith='delete_').exclude(content_type__model__in=['audit','siteconfiguration','consent','agreement']))
         clientgroup,_=Group.objects.get_or_create(name='Cliente')
         creds={}

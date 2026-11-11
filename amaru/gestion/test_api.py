@@ -36,7 +36,7 @@ class APITests(TestCase):
     def setUp(self):
         cache.clear();call_command('configure_roles',verbosity=0)
         self.staff=User.objects.create_user('staff_api',password='fictitious-test-password')
-        self.staff.groups.add(Group.objects.get(name='Personal de atención'))
+        self.staff.groups.add(Group.objects.get(name='Vendedor'))
         self.owner=User.objects.create_user('owner_api',password='fictitious-test-password')
         self.stranger=User.objects.create_user('stranger_api',password='fictitious-test-password')
         self.clientrow=Client.objects.create(rut='12345678-5',name='Cliente ficticio API',phone='00000000',category='particular',user=self.owner)

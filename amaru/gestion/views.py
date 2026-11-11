@@ -151,7 +151,11 @@ def state(request,module,pk):
             else:
                 obj.status=form.cleaned_data['status']
                 if model==Warranty:obj.justification=form.cleaned_data['justification']
-                obj.save();audit(request.user,f'{before} → {obj.status} · {form.cleaned_data["justification"]}',obj)
+                obj.save()
+                if model==Order:
+                    from .pickup import sync_order_state
+                    sync_order_state(obj, before, request.user)
+                audit(request.user,f'{before} → {obj.status} · {form.cleaned_data["justification"]}',obj)
                 return redirect('detail',module=module,pk=pk)
     return render(request,'form.html',{'title':f'Actualizar estado · {obj.folio}','form':form})
 def remote(request):

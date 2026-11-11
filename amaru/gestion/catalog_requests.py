@@ -50,7 +50,14 @@ def request_product(request):
     if not values["contact_authorized"]:
         raise ValidationError("Autoriza el contacto para gestionar esta solicitud.")
     with transaction.atomic():
+        from .membership import verified_agreement
+        agreement = verified_agreement(client, lock=True)
+        client = Client.objects.select_for_update().get(pk=client.pk)
+        if not client.active or client.user_id != request.user.pk:
+            raise PermissionDenied()
         product = get_object_or_404(Product.objects.select_for_update(), pk=values["product"], active=True)
+        if product.mining_only and not (agreement and hasattr(agreement, 'union')):
+            raise PermissionDenied('Se requiere una afiliación sindical vigente para este producto.')
         recipe = None
         if values.get("prescription"):
             recipe = get_object_or_404(Prescription, pk=values["prescription"], client=client)
@@ -59,7 +66,7 @@ def request_product(request):
         if product.requires_prescription and recipe is None:
             raise ValidationError({"prescription": "Este producto requiere una receta vigente."})
         inquiry, created = Inquiry.objects.get_or_create(idempotency_key=values["idempotency_key"], defaults={
-            "kind": "lentes", "client": client, "product": product, "prescription": recipe,
+            "kind": "lentes", "client": client, "product": product, "prescription": recipe, "agreement": agreement,
             "name": client.name, "email": client.email, "phone": client.phone,
             "service": "Solicitud de producto", "reason": values["reason"],
             "contact_authorized": True, "actor": request.user,

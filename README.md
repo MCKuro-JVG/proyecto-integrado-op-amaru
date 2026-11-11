@@ -4,6 +4,8 @@ Aplicación académica para atención óptica. Evolución del backend `amaru/ges
 
 **Estado:** aplicación local Django + MariaDB con Cloudflare R2 activado y verificado el 26 de octubre de 2026. Las recetas, firmas y PDF se guardan en `amaru-privado`; las imágenes del catálogo utilizan `amaru-publico`. La etapa QR verificó 80 pruebas automatizadas sobre MariaDB, 21 pruebas específicas de atención y recorridos de interfaz en Chrome. Consulte [la conexión y las pruebas de R2](docs/CLOUDFLARE_R2.md). El repositorio conserva el historial y el frontend original. Las credenciales y los medios no se publican.
 
+La administración de sindicatos, afiliaciones, catálogo minero y retiro se describe en la [guía de sindicatos y retiro](docs/SINDICATOS_RETIRO.md). Incluye el recorrido con datos ficticios y los permisos de cada perfil.
+
 ## Tecnologías y estructura
 
 - Python 3.12; Django 5.2.17; Django REST Framework 3.16.1.

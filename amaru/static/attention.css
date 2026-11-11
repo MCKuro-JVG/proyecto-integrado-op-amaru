@@ -94,3 +94,7 @@
 .appointment-legend, .appointment-calendar [role="status"] { color: #515761; font-size: .9rem; }
 .appointment-calendar [role="status"]:empty { display: none; }
 @media (max-width: 700px) { .appointment-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; } }
+
+.union-nav { flex-wrap: wrap; gap: 8px; margin-block: 12px; }
+.union-nav [aria-current="page"] { background: #ff7e70; color: #26120f; }
+.pickup-code { font: 700 clamp(.95rem, 3.5vw, 1.4rem) monospace; letter-spacing: .08em; overflow-wrap: anywhere; }
