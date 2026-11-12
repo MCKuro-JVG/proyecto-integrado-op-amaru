@@ -1,3 +1,2 @@
 .brand-eye { display: block; width: clamp(72px, 10vw, 108px); height: auto; }
-#site-name .brand-eye { background: #fff; border-radius: 6px; box-shadow: 0 0 0 4px #fff; }
 .institutional-logo { display: block; width: min(100%, 230px); height: auto; margin-bottom: 16px; }

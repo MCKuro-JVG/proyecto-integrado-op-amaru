@@ -15,9 +15,8 @@ body[data-experience="public"] { background: #fffafa; }
   height: auto;
 }
 .brand-mobile { display: none; }
-.sidebar .brand-eye { background: #fff; border-radius: 6px; box-shadow: 0 0 0 4px #fff; }
 .institutional-logo { display: block; width: min(100%, 300px); height: auto; object-fit: contain; }
-.brand-feature { margin: 0; background: #fff; padding: clamp(16px, 3vw, 32px); border-radius: 14px; }
+.brand-feature { margin: 0; padding: clamp(16px, 3vw, 32px); }
 .hero .brand-feature { justify-self: center; width: min(100%, 364px); }
 .brand-feature--auth { margin: 0 0 20px; width: min(100%, 245px); padding: 12px; }
 @media (max-width: 900px) {
