@@ -1,4 +1,4 @@
-/* Paleta académica para revisión con Óptica Amaru. La fotografía del logo conserva sus colores. */
+/* Paleta académica para revisión con Óptica Amaru. Los recursos oficiales conservan sus colores. */
 :root {
   --amaru-salmon: #ff7e70;
   --amaru-ink: #191617;
@@ -9,11 +9,20 @@
   --line: var(--amaru-border);
 }
 body[data-experience="public"] { background: #fffafa; }
-.brand .official-logo {
+.brand-eye {
   display: block;
-  width: clamp(112px, 14vw, 154px);
+  width: clamp(72px, 10vw, 108px);
   height: auto;
-  border-radius: 5px;
+}
+.brand-mobile { display: none; }
+.sidebar .brand-eye { background: #fff; border-radius: 6px; box-shadow: 0 0 0 4px #fff; }
+.institutional-logo { display: block; width: min(100%, 300px); height: auto; object-fit: contain; }
+.brand-feature { margin: 0; background: #fff; padding: clamp(16px, 3vw, 32px); border-radius: 14px; }
+.hero .brand-feature { justify-self: center; width: min(100%, 364px); }
+.brand-feature--auth { margin: 0 0 20px; width: min(100%, 245px); padding: 12px; }
+@media (max-width: 900px) {
+  .topbar .brand-mobile { display: inline-flex; }
+  .brand-mobile .brand-eye { width: 60px; }
 }
 .sidebar .brand { align-self: stretch; }
 .sidebar, .hero, .staff-intro { background: var(--amaru-ink); }

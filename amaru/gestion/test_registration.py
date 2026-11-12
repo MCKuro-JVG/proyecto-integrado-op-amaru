@@ -189,8 +189,8 @@ class ClientRegistrationTests(TestCase):
                                verification_state='aprobada', idempotency_key=uuid4(), **base)
         self.assertEqual(self.client.get('/api/my-account/').json()['agreement'], str(agreement))
 
-    def test_public_shells_include_official_logo_and_registration_link(self):
+    def test_public_shells_include_official_eye_and_registration_link(self):
         for url in ('/app/registro.html', '/app/privacidad.html', '/app/'):
-            self.assertContains(self.client.get(url), 'logo-amaru-oficial.jpg')
+            self.assertContains(self.client.get(url), 'ojo-amaru-oficial.png')
         self.assertContains(self.client.get('/app/'), 'data-signup-nav')
         self.assertContains(self.client.get('/login/'), 'Regístrate aquí')

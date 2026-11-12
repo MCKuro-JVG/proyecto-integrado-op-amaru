@@ -1,8 +1,9 @@
 {% extends "admin/base.html" %}
 {% load static %}
 {% block title %}{{ title }} | Ópticas Amaru{% endblock %}
+{% block extrahead %}{{ block.super }}<link rel="stylesheet" href="{% static 'brand.css' %}?v=27143f728131">{% include "brand_favicons.html" %}{% endblock %}
 {% block branding %}
 <div id="site-name"><a href="{% url 'admin:index' %}">
-  <img src="{% static 'interfaz/img/logo-amaru-oficial.jpg' %}" width="124" height="64" alt="Óptica Amaru · Tu Visión, Tu Imagen">
+  <img class="brand-eye" src="{% static 'interfaz/img/ojo-amaru-oficial.png' %}" width="473" height="189" alt="Óptica Amaru — Inicio">
 </a></div>
 {% endblock %}
