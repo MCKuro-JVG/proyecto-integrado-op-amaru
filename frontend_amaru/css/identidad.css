@@ -11,21 +11,46 @@
 body[data-experience="public"] { background: #fffafa; }
 .brand-eye {
   display: block;
-  width: clamp(72px, 10vw, 108px);
+  width: clamp(76px, 8vw, 96px);
+  max-width: 100%;
   height: auto;
 }
 .brand-mobile { display: none; }
-.institutional-logo { display: block; width: min(100%, 300px); height: auto; object-fit: contain; }
-.brand-feature { margin: 0; padding: clamp(16px, 3vw, 32px); }
-.hero .brand-feature { justify-self: center; width: min(100%, 364px); }
-.brand-feature--auth { margin: 0 0 20px; width: min(100%, 245px); padding: 12px; }
+.public-header .brand, .topbar .brand-mobile { flex: 0 0 auto; }
+.public-header .public-nav { min-width: 0; }
+.sidebar .brand { align-self: stretch; min-width: 0; }
+.institutional-logo { display: block; width: 100%; max-width: 280px; height: auto; object-fit: contain; }
+.brand-feature { margin: 0; min-width: 0; }
+.hero .brand-feature { justify-self: center; width: min(100%, 280px); }
+.brand-feature--auth { margin: 0 0 20px; width: min(100%, 220px); }
+.sidebar, .staff-intro { background: var(--amaru-ink); }
+.hero {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 280px);
+  background: var(--amaru-tint);
+  color: var(--amaru-ink);
+  border: 1px solid var(--amaru-border);
+}
+.hero > * { min-width: 0; }
+.hero h1 { margin: 0 0 10px; font-size: clamp(28px, 4vw, 42px); }
+.hero h2 { margin: 0 0 8px; }
+.hero .actions { flex-wrap: wrap; }
+.hero .actions .button { max-width: 100%; text-align: center; }
 @media (max-width: 900px) {
+  .public-header { min-height: 0; gap: 8px 16px; padding: 14px 4%; }
+  .public-header .menu-button { display: inline-flex; }
+  .public-header .public-nav { display: none; }
+  .public-header .public-nav.open { display: flex; justify-content: flex-start; }
   .topbar .brand-mobile { display: inline-flex; }
   .brand-mobile .brand-eye { width: 60px; }
 }
-.sidebar .brand { align-self: stretch; }
-.sidebar, .hero, .staff-intro { background: var(--amaru-ink); }
-.sidebar .nav-heading, .sidebar-note, .staff-intro .eyebrow, .hero p { color: #ffe5e1; }
+@media (max-width: 700px) {
+  .public-header { gap: 8px 16px; min-height: 0; }
+  .public-header .brand-eye { width: 68px; }
+  .hero { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .hero .brand-feature { width: min(75%, 240px); }
+}
+.sidebar .nav-heading, .sidebar-note, .staff-intro .eyebrow { color: #ffe5e1; }
+.hero p { color: var(--amaru-ink); }
 .sidebar .nav-link.active, .public-nav a.current, .button.primary {
   color: var(--amaru-ink);
   background: var(--amaru-salmon);
@@ -38,7 +63,7 @@ body[data-experience="public"] { background: #fffafa; }
 }
 .panel-head, .button.soft, .qr-url, .choice, .kanban-col { background: var(--amaru-tint); }
 .panel-head h2, .dashboard-stats .stat strong, .eyebrow, .timeline strong { color: var(--amaru-accent); }
-.hero .button.soft { background: var(--amaru-tint); color: var(--amaru-ink); }
+.hero .button.soft { background: #fff; color: var(--amaru-ink); }
 :focus-visible { outline: 3px solid var(--amaru-accent); outline-offset: 3px; }
 
 .catalog-detail-image { display: block; max-width: min(100%, 32rem); max-height: 22rem; object-fit: contain; border-radius: 10px; }

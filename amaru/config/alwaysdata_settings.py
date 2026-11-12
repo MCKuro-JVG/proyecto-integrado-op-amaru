@@ -57,6 +57,12 @@ R2_ENABLED = False
 MEDIA_ROOT = Path(env_file).resolve().parent / "media"
 if MEDIA_ROOT.is_relative_to(BASE_DIR.parent):
     raise ImproperlyConfigured("El archivo de entorno y media deben quedar fuera del repositorio.")
+# Una raíz nueva evita sobrescribir archivos que WhiteNoise ya indexó.
+static_release = os.getenv("AMARU_STATIC_RELEASE")
+if static_release:
+    if not re.fullmatch(r"[a-f0-9]{12}", static_release):
+        raise ImproperlyConfigured("AMARU_STATIC_RELEASE debe ser un identificador Git de 12 caracteres.")
+    STATIC_ROOT = Path(env_file).resolve().parent / "static-releases" / static_release
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"},

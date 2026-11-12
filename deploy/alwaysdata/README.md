@@ -78,3 +78,20 @@ En el primer despliegue se verificaron el inicio público, el logo, `/healthz/`,
 - `gestion_inquiry` contiene la solicitud y `gestion_purchaseline` sus líneas históricas. El personal revisa el detalle en Solicitudes recibidas, puede establecer precios y generar un borrador en `gestion_quote` y `gestion_quoteline`. La orden de trabajo conserva el flujo existente de receta y aprobación. Una integración de pagos posterior puede partir del identificador de solicitud o cotización con un registro de transacciones separado.
 - El portal Convenios admite código, registro y consulta por referencia privada. Para habilitar a un representante, crea una cuenta dedicada sin grupos ni permisos de personal y vincúlala a una organización en Administración Django → Agreement representatives. El representante puede revisar esa organización en `/app/representante.html`.
 - Queda por confirmar el catálogo y precios oficiales, las condiciones de cada convenio, los cupos de atención, la vigencia de recetas y las reglas de pago. No se aplican descuentos ni se procesan pagos en la demostración.
+
+
+### Publicar cambios visuales sin sobrescribir los estáticos activos
+
+WhiteNoise indexa rutas y tamaños al iniciar WSGI. Sobrescribir los
+archivos en su raíz activa puede producir respuestas HTTP 200 truncadas,
+aunque el enlace incluya un parámetro de versión.
+
+1. Prepara el código y un identificador Git nuevo de 12 caracteres. Respalda
+   el código y la configuración.
+2. Ejecuta collectstatic con AMARU_STATIC_RELEASE igual a ese identificador.
+   El perfil recopila en static-releases/<id> al lado del .env privado. No
+   recopiles sobre la raíz activa.
+3. Activa ese mismo valor para WSGI (en el .env privado o en el panel) y
+   reinicia el sitio. Conserva el árbol anterior para una reversión.
+4. Comprueba que los CSS y JS se descargan completos con compresión activa
+   y revisa el sitio en un perfil de navegador nuevo.

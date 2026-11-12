@@ -43,7 +43,7 @@ const registrationLink='<p class="signup-link"><a href="/app/registro.html">¿No
 async function renderRegistration(){
  if(session.authenticated){screen.innerHTML=head('Tu sesión está activa')+link('Ir a mis pedidos','consulta.html');return;}
  const setup=await api('register/');
- screen.innerHTML='<div class="brand-feature brand-feature--auth"><img class="institutional-logo" src="/static/interfaz/img/logo-amaru-oficial.png" width="948" height="488" alt="Óptica Amaru · Tu Visión, Tu Imagen"></div>'+head('Crear cuenta','Regístrate para solicitar cotizaciones y consultar tus pedidos desde tu cuenta.')+
+ screen.innerHTML='<div class="brand-feature brand-feature--auth"><img class="institutional-logo" src="/static/interfaz/img/logo-amaru-oficial.png" width="220" height="113" alt="Óptica Amaru · Tu Visión, Tu Imagen"></div>'+head('Crear cuenta','Regístrate para solicitar cotizaciones y consultar tus pedidos desde tu cuenta.')+
  panel('Tus datos',form('register',
   input('name','Nombre completo','text','','required maxlength="180" autocomplete="name"')+
   input('rut','RUT','text','','required maxlength="18" placeholder="12.345.678-5"')+
@@ -78,7 +78,7 @@ async function renderMyAccount(){
    input('file','Receta privada (JPG, PNG o PDF)','file','','required accept=".jpg,.jpeg,.png,.pdf"'),'Guardar receta privada'));
 }
 
-function loginForm(){screen.innerHTML='<div class="brand-feature brand-feature--auth"><img class="institutional-logo" src="/static/interfaz/img/logo-amaru-oficial.png" width="948" height="488" alt="Óptica Amaru · Tu Visión, Tu Imagen"></div>'+head('Acceso a Ópticas Amaru','Ingresa con tu usuario o con el correo de tu cuenta activada.')+panel('Autenticación',form('login',input('username','Usuario o correo','text','','required autocomplete="username"')+input('password','Contraseña','password','','required autocomplete="current-password"'),'Iniciar sesión')+registrationLink);}
+function loginForm(){screen.innerHTML='<div class="brand-feature brand-feature--auth"><img class="institutional-logo" src="/static/interfaz/img/logo-amaru-oficial.png" width="220" height="113" alt="Óptica Amaru · Tu Visión, Tu Imagen"></div>'+head('Acceso a Ópticas Amaru','Ingresa con tu usuario o con el correo de tu cuenta activada.')+panel('Autenticación',form('login',input('username','Usuario o correo','text','','required autocomplete="username"')+input('password','Contraseña','password','','required autocomplete="current-password"'),'Iniciar sesión')+registrationLink);}
 function error(e){screen.innerHTML=head('No se pudo cargar esta sección')+note(e.message)+btn('Reintentar','reload');}
 
 const unionStates={pending:'Pendiente',active:'Activo',inactive:'Inactivo',suspended:'Suspendido'};
@@ -206,7 +206,7 @@ async function render(){
  const publicPages=['index','catalogo','formulario_remoto','producto','carrito','portal_convenios','registro','privacidad','invitacion'];
  if(!publicPages.includes(page)&&!session.authenticated){loginForm();return;}
  if(!publicPages.includes(page)&&!['consulta','recepcion','documentos','representante','sindicato','sindicatos','retiro'].includes(page)&&!session.permissions.some(p=>p.startsWith('gestion.view_'))){screen.innerHTML=head('Acceso restringido')+link('Ir a mis pedidos','consulta.html');return;}
- if(page==='index'){screen.innerHTML=head('Una mirada clara. Una atención más cerca.','Conoce la propuesta de Ópticas Amaru y solicita orientación.')+`<section class="hero"><div><h2>Tu atención, conectada.</h2><p>Desde la primera consulta hasta el retiro de tus lentes.</p><div class="actions">${link('Solicitar atención','formulario_remoto.html')}${link('Productos y servicios','catalogo.html')}${link('Mis pedidos','consulta.html')}</div></div><div class="brand-feature"><img class="institutional-logo" src="/static/interfaz/img/logo-amaru-oficial.png" width="948" height="488" alt="Óptica Amaru · Tu Visión, Tu Imagen"></div></section>`+note('Catálogo académico y horarios de referencia. Las solicitudes quedan registradas para revisión, sin envío automático de correos.');}
+ if(page==='index'){screen.innerHTML=`<section class="hero"><div><h1>Ópticas Amaru</h1><h2>Tu atención, conectada.</h2><p>Desde la primera consulta hasta el retiro de tus lentes.</p><div class="actions">${link('Solicitar atención','formulario_remoto.html')}${link('Productos y servicios','catalogo.html')}${link('Mis pedidos','consulta.html')}</div></div><div class="brand-feature"><img class="institutional-logo" src="/static/interfaz/img/logo-amaru-oficial.png" width="280" height="144" alt="Óptica Amaru · Tu Visión, Tu Imagen"></div></section>`+note('Catálogo académico y horarios de referencia. Las solicitudes quedan registradas para revisión, sin envío automático de correos.');}
  else if(page==='registro')await renderRegistration();
  else if(page==='privacidad')renderPrivacy();
  else if(page==='catalogo')await renderCatalog();

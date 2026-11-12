@@ -13,7 +13,7 @@ def interface(request,page='index.html'):
     if page in {'registro.html','privacidad.html'} and getattr(settings,'ATTENTION_PUBLIC_ONLY',False): raise Http404
     html=path.read_text(encoding='utf-8')
     html=re.sub(r'<script src="js/(?:storage|app)\.js[^\"]*" defer></script>','',html)
-    html=html.replace('</head>','<link rel="stylesheet" href="/static/attention.css?v=academic6">'+'<script src="/static/server.js?v=5239adb5f74d" defer></script></head>')
+    html=html.replace('</head>','<link rel="stylesheet" href="/static/attention.css?v=academic6">'+'<script src="/static/server.js?v=8880a55a23a7" defer></script></head>')
     html=re.sub(r'(href|src)="((?:css|img|js)/)',r'\1="/static/interfaz/\2',html)
     html=re.sub(r'<div class="demo-banner">.*?</div>','<div class="demo-banner">APLICACIÓN ACADÉMICA · Datos en el servidor · Sin envíos de correo o mensajes · Use datos ficticios</div>',html)
     html=re.sub(r'bootstrap\.js\?v=[a-z0-9]+', 'bootstrap.js?v=async1', html)
