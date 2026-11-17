@@ -10,6 +10,7 @@ from .models import *
 from .services import audit,record_consent
 admin.site.site_header='Ópticas Amaru · Administración'
 admin.site.site_title='Ópticas Amaru'
+admin.site.site_url = '/app/dashboard.html'
 class LoggedAdmin(admin.ModelAdmin):
     def save_model(self,request,obj,form,change):
         super().save_model(request,obj,form,change);audit(request.user,'Actualización administrativa' if change else 'Registro administrativo',obj)

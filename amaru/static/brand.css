@@ -3,7 +3,7 @@
 
 :root {
   --amaru-salmon: #ff7e70;
-  --amaru-ink: #191617;
+  --amaru-ink: #35282a;
   --amaru-accent: #8c3037;
   --amaru-tint: #fff1ef;
   --amaru-paper: #fffafa;
@@ -23,3 +23,35 @@ body:has(.layout) :is(button, .button):focus-visible { outline: 3px solid var(--
   body:has(.layout) :is(button, .button):not(:disabled):hover { transform: translateY(-2px); box-shadow: 0 6px 14px var(--amaru-shadow); }
   body:has(.layout) :is(button, .button):not(:disabled):active { transform: none; }
 }
+
+/* Django Admin has its own theme selectors. Keep the work surfaces light. */
+html[data-theme] {
+  color-scheme: light;
+  --body-fg: #35282a;
+  --body-bg: #ffffff;
+  --body-quiet-color: #66565a;
+  --body-medium-color: #56454a;
+  --body-loud-color: #35282a;
+  --header-color: #35282a;
+  --header-branding-color: #35282a;
+  --header-bg: #fff1ef;
+  --header-link-color: #703137;
+  --breadcrumbs-fg: #35282a;
+  --breadcrumbs-link-fg: #703137;
+  --breadcrumbs-bg: #ffd8d2;
+  --primary: #853a3e;
+  --secondary: #853a3e;
+  --link-fg: #853a3e;
+  --link-hover-color: #63252b;
+  --link-selected-fg: #63252b;
+  --hairline-color: #e9ceca;
+  --border-color: #d5b3af;
+  --darkened-bg: #fffafa;
+  --selected-bg: #fff1ef;
+  --selected-row: #ffd8d2;
+  --close-button-bg: #654e52;
+  --button-bg: #853a3e;
+  --default-button-bg: #703137;
+}
+#header, #nav-sidebar { color-scheme: light; }
+#header .brand-eye { display: block; }

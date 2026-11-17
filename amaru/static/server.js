@@ -159,7 +159,7 @@ async function renderUnion(){
    form('union-password',input('current','Contraseña actual','password','','required maxlength="128" autocomplete="current-password"')+
     input('password','Nueva contraseña','password','','required maxlength="128" autocomplete="new-password"'),'Actualizar contraseña'));
  }else{
-  content=panel('Resumen',`<p>Convenio: ${esc(unionStates[u.state])} · ${u.available?'Vigente':'Sin beneficios vigentes'}</p>
+  content=workflow('Cómo funciona el Panel del Sindicato',unionWorkflow)+panel('Resumen',`<p>Convenio: ${esc(unionStates[u.state])} · ${u.available?'Vigente':'Sin beneficios vigentes'}</p>
    <p>Vigencia: ${textDate(u.starts_on)} a ${textDate(u.ends_on)}</p>`+unionDocument(u))+
    `<div class="stats">${[['Activos',data.counts.active],['Inactivos',data.counts.inactive],['Afiliaciones pendientes',data.counts.pending],
     ['Recuperaciones pendientes',data.workers.filter(row=>row.recovery_requested_at).length]].map(([label,n])=>
@@ -178,8 +178,9 @@ async function renderUnionAdmin(){
  }
  const [unions,requests]=await Promise.all([api('unions/'),api('union/reviews/')]);
  unionAdminRows=unions;
- screen.innerHTML=head('Gestión de sindicatos','Registra, revisa y activa los convenios de cada organización.')+
- btn('Registrar sindicato','union-new')+
+ screen.innerHTML=head('Sindicatos','Organizaciones con cuenta de representante, firma y activación administrativa.')+
+ '<div class="actions section-actions">'+btn('Registrar sindicato','union-new')+link('Ir a Convenios por código','convenios.html')+'</div>'+
+ workflow('Cómo habilitar un sindicato',unionWorkflow)+
  unions.map(u=>panel(u.name,`<p>${esc(u.identifier)} · ${esc(unionStates[u.state])} · ${textDate(u.starts_on)} a ${textDate(u.ends_on)}</p>`+
   unionDocument(u)+`<div class="actions union-nav">`+link('Ver trabajadores','sindicatos.html?union='+u.id)+btn('Editar datos institucionales','union-edit',u.id)+btn('Asociar PDF','union-upload',u.id)+btn('Reemitir invitación del representante','union-invite',u.id)+
   (u.state==='active'?btn('Suspender sindicato','union-suspend',u.id):u.document?.signed_at?btn('Activar sindicato','union-activate',u.id):'')+'</div>')).join('')+
@@ -229,7 +230,7 @@ async function render(){
  }
  else if(page==='dashboard'){
  const results=await Promise.all(['clients/','orders/','receipts/','inquiries/'].map(p=>api(p).catch(()=>null)));
- screen.innerHTML=head('Resumen de atención','Información persistida en la base de datos del servidor.')+`<div class="stats dashboard-stats">${results.map((r,i)=>`<article class="stat"><div>${['Clientes','Órdenes de trabajo','Entregas registradas','Solicitudes de atención'][i]}</div><strong>${r?r.count:'Sin permiso'}</strong></article>`).join('')}</div>`+(results[1]?panel('Pedidos recientes',ordersTable(results[1].results)):note('No tienes acceso a las órdenes.'))+link('Bitácora','/auditoria/')+(has('change_union')?link('Sindicatos','sindicatos.html'):'')+(has('add_receipt')?link('Validar retiro de lentes','retiro.html'):'')+(has('view_agreement')?link('Gestión de convenios','convenios.html'):'')+(has('view_product')?link('Administración de catálogo','catalogo.html?gestion=1'):'')+(has('view_inquiry')?btn('Mostrar QR de atención','attention-qr')+link('Solicitudes recibidas','solicitudes.html'):'');
+ screen.innerHTML=head('Resumen de atención','Información persistida en la base de datos del servidor.')+`<div class="stats dashboard-stats">${results.map((r,i)=>`<article class="stat"><div>${['Clientes','Órdenes de trabajo','Entregas registradas','Solicitudes de atención'][i]}</div><strong>${r?r.count:'Sin permiso'}</strong></article>`).join('')}</div>`+(results[1]?panel('Pedidos recientes',ordersTable(results[1].results)):note('No tienes acceso a las órdenes.'))+'<div class="actions" aria-label="Accesos del panel">'+link('Bitácora','/auditoria/')+(session.django_admin?link('Administración del sistema','/admin/'):'' )+(has('change_union')?link('Sindicatos','sindicatos.html'):'')+(has('add_receipt')?link('Validar retiro de lentes','retiro.html'):'')+(has('view_agreement')?link('Gestión de convenios','convenios.html'):'')+(has('view_product')?link('Administración de catálogo','catalogo.html?gestion=1'):'')+(has('view_inquiry')?btn('Mostrar QR de atención','attention-qr')+link('Solicitudes recibidas','solicitudes.html'):'')+'</div>';
  }
  else if(page==='detalle_cliente'){
  const c=await api('clients/'+params.get('cliente')+'/');screen.innerHTML=head(c.name,c.rut)+panel('Ficha de cliente',`<p>${esc(c.phone)} · ${esc(c.email)}</p><p>${esc(c.category)} · Contacto posventa: ${c.consent?'Autorizado':'No autorizado'}</p><p>Estado: ${c.active?'Activo':'Inactivo'}</p>`+btn('Editar ficha','client-edit',c.id)) +link('Clientes','clientes.html');
@@ -289,26 +290,56 @@ async function productForm(id){
   select('mining_only','Catálogo',[['false','General'],['true','Exclusivo de lentes mineros']],String(p.mining_only??false))+
   select('requires_prescription','Receta',[['false','No exige receta'],['true','Exige receta vigente']],String(p.requires_prescription??false))));
 }
+function statusTag(label,state){
+ return '<span class="status-tag status-tag--'+state+'">'+esc(label)+'</span>';
+}
+function workflow(title,steps){
+ return '<details class="workflow" open><summary>'+esc(title)+'</summary><ol>'+
+  steps.map(([label,description])=>'<li><strong>'+esc(label)+'</strong><p>'+esc(description)+'</p></li>').join('')+
+  '</ol></details>';
+}
+const unionWorkflow=[
+ ['Invitación','Administración registra el sindicato y entrega al representante una invitación individual.'],
+ ['Revisión y firma','El representante abre el PDF y acepta la versión correspondiente.'],
+ ['Activación','Administración revisa la firma y habilita el sindicato.'],
+ ['Ingreso al panel','El representante usa la cuenta activada por invitación.'],
+ ['Alta de trabajadores','El representante crea o invita a cada trabajador desde su panel.'],
+ ['Vinculaciones','El representante revisa los accesos de su organización y desactiva los que correspondan.'],
+ ['Seguimiento','Consulta el estado de cada trabajador para saber si falta una acción.'],
+];
+function agreementStatus(a){
+ if(!a.active)return statusTag('Inactivo','inactive');
+ if(a.available)return statusTag('Vigente','active');
+ const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Santiago'}).format(new Date());
+ return a.ends_on&&a.ends_on<today?statusTag('Vencido','inactive'):statusTag('Pendiente','pending');
+}
 async function renderAgreements(){
- const result=await list('agreements/');
+ const result=await list('agreements/?tipo=tradicional');
  const management=has('change_agreement');
+ const reviewLink=has('view_inquiry')?link('Revisar pendientes','solicitudes.html?verification=pendiente'):'';
  const rows=result.results.map(a=>{
-  const state=a.managed_union?'Sindicato con cuentas':!a.available?'Convenio inactivo o fuera de vigencia':!a.code_available?'Código desactivado o revocado':'Código vigente';
-  let actions=link('Ver solicitudes', 'solicitudes.html?verification=all&agreement='+a.id);
-  if(a.managed_union){
-   if(has('change_union'))actions+=link('Gestionar sindicato','sindicatos.html');
-  }else{
-   if(a.code_available)actions+=btn('Mostrar QR','agreement-qr',a.id);
-   if(management){
-    actions+=btn('Editar convenio','agreement-edit',a.id)+btn('Administrar código','agreement-code',a.id);
-    if(a.code)actions+=btn('Copiar código','qr-copy',a.code);
-   }
+  let actions=has('view_inquiry')?link('Consultar trabajadores','solicitudes.html?verification=all&agreement='+a.id):'';
+  if(a.code_available)actions+=btn('Mostrar QR','agreement-qr',a.id);
+  if(management){
+   actions+=btn('Editar convenio','agreement-edit',a.id)+btn(a.code?'Administrar código':'Generar código','agreement-code',a.id);
+   if(a.code_available&&a.code)actions+=btn('Copiar código','qr-copy',a.code);
+   if(a.active)actions+=btn('Desactivar convenio','agreement-disable',a.id);
   }
-  return [esc(a.name),esc(a.code||(management&&!a.managed_union?'Sin código':'—')),esc([a.starts_on,a.ends_on].filter(Boolean).join(' a ')||'Sin fechas definidas'),state,'<div class="actions">'+actions+'</div>'];
+  const code=a.code_available?'Código disponible':a.code_enabled?'Código no disponible':'Código desactivado o revocado';
+  return [esc(a.name),esc(a.code||(management?'Sin código':'—'))+'<br><small>'+esc(code)+'</small>',
+   esc([a.starts_on,a.ends_on].filter(Boolean).join(' a ')||'Sin fechas definidas'),agreementStatus(a),'<div class="actions">'+actions+'</div>'];
  });
- screen.innerHTML=head('Gestión de convenios','Comparte el código o QR con la organización. La óptica debe validar cada solicitud de pertenencia.')+
-  (has('change_union')?link('Gestionar sindicatos','sindicatos.html'):'')+(has('add_agreement')?btn('Nuevo convenio','agreement-new'):'')+link('Solicitudes de validación','solicitudes.html?verification=all')+
-  panel('Convenios',table(['Organización','Código','Vigencia','Estado','Acciones'],rows))+pages(result);
+ screen.innerHTML=head('Convenios','Organizaciones que reciben un código y solicitan validaciones individuales.')+
+  '<div class="actions section-actions">'+(has('add_agreement')?btn('Nuevo convenio','agreement-new'):'')+reviewLink+
+  (has('change_union')?link('Ir a Sindicatos','sindicatos.html'):'')+'</div>'+
+  workflow('Cómo gestionar un convenio por código',[
+   ['Crear organización','Registra el nombre y la vigencia. El correo de contacto es opcional.'],
+   ['Generar código','Al guardar, se asigna un código único. Si falta o debe cambiarse, usa Administrar código.'],
+   ['Compartir código','Copia el código o abre el QR para descargarlo o imprimirlo. Entrégalo por el canal acordado.'],
+   ['Registro del trabajador','La persona ingresa el código en Convenios y completa su solicitud.'],
+   ['Validar pertenencia','Abre Revisar pendientes y aprueba o rechaza con una verificación autorizada.'],
+   ['Activar beneficios','Una vinculación aprobada y vigente habilita los beneficios confirmados del convenio.'],
+  ])+panel('Convenios por código',rows.length?table(['Organización','Código de registro','Vigencia','Estado','Acciones'],rows):note('Aún no hay convenios por código.'))+pages(result);
 }
 
 async function agreementCodeDialog(id, historyPage=1){
@@ -324,7 +355,16 @@ async function agreementCodeDialog(id, historyPage=1){
   panel('Bitácora del código',table(['Fecha','Movimiento'],history.results.map(event=>[esc(date(event.at)),esc(event.action)]))+
   (history.previous?btn('← Anterior','agreement-code-history',id+':'+(historyPage-1)):'')+
   (history.next?btn('Siguiente →','agreement-code-history',id+':'+(historyPage+1)):'')+
-  link('Ver solicitudes del convenio','solicitudes.html?verification=all&agreement='+id)));
+  (has('view_inquiry')?link('Ver solicitudes del convenio','solicitudes.html?verification=all&agreement='+id):'')));
+}
+
+async function showAgreementQR(id){
+ const data=await api('agreements/'+id+'/qr/');
+ const image='/api/agreements/'+encodeURIComponent(id)+'/qr/?image=png';
+ dialog('QR de convenio','<div class="attention-qr"><img alt="Código QR del convenio" src="'+esc(image)+'">'+
+  '<p class="qr-url">'+esc(data.url)+'</p><div class="actions">'+btn('Copiar enlace','qr-copy',data.url)+
+  '<a class="button soft" href="'+esc(image)+'" download="convenio-amaru.png">Descargar QR</a>'+
+  btn('Imprimir QR','agreement-print')+'</div></div>');
 }
 
 async function agreementForm(id){
@@ -620,7 +660,7 @@ async function recipeForm(){
  const clients=await api('clients/');dialog('Receta óptica',form('recipe',select('client','Cliente',clients.results.map(c=>[c.id,c.name+' · '+c.rut]))+input('issued_on','Fecha de emisión','date','','required')+input('file','Archivo privado PDF, JPG o PNG','file','','required accept=".pdf,.png,.jpg,.jpeg"')+input('physical_reference','Referencia física','text','',''))+note('Se valida contenido y tamaño máximo de 10 MB en el servidor. El archivo no se guarda en localStorage.'));
 }
 const quoteFilters=['rut','folio','desde','hasta','orden'];
-function quoteState(quote){return quote.approved?'Aprobada':'Borrador';}
+function quoteState(quote){return quote.converted?'Convertida en orden':quote.approved?'Aprobada':'Borrador';}
 function quoteDate(value){return new Intl.DateTimeFormat('es-CL',{dateStyle:'medium',timeZone:'America/Santiago'}).format(new Date(value));}
 
 async function renderQuotes(){
@@ -628,13 +668,13 @@ async function renderQuotes(){
  const query=new URLSearchParams([...params].filter(([key])=>quoteFilters.includes(key)));
  const filters=form('quote-search',
   input('rut','RUT del cliente','search',params.get('rut')||'','maxlength="16" placeholder="12.345.678-5"')+
-  input('folio','Folio','search',params.get('folio')||'','maxlength="32"')+
-  input('desde','Desde','date',params.get('desde')||'','')+
-  input('hasta','Hasta','date',params.get('hasta')||'','')+
+  input('folio','Folio de cotización','search',params.get('folio')||'','maxlength="32"')+
+  input('desde','Fecha desde','date',params.get('desde')||'','')+
+  input('hasta','Fecha hasta','date',params.get('hasta')||'','')+
   select('orden','Ordenar por',ordering,params.get('orden')||'fecha-desc'),'Buscar');
  screen.innerHTML=head('Cotizaciones','Busca por RUT, folio o fecha. El historial del RUT buscado se muestra bajo la ficha del cliente.')+
   (has('add_quote')?btn('Nueva cotización','quote-new'):'')+
-  panel('Buscar cotizaciones',filters+link('Limpiar y volver al listado general','cotizaciones.html'));
+  panel('Buscar cotizaciones',filters.replace('</div><p class="form-feedback"',link('Limpiar filtros','cotizaciones.html')+'</div><p class="form-feedback"'));
  let data;
  try{data=await list('quotes/?'+query);}
  catch(e){if(e.status!==400)throw e;screen.querySelector('[data-form="quote-search"] .form-feedback').textContent=e.message;return;}
@@ -642,10 +682,10 @@ async function renderQuotes(){
  const grouped=Boolean(params.get('rut')&&first);
  const headers=['Folio',...(grouped?[]:['Cliente y RUT']),'Fecha','Monto','Estado','Convenio','Acciones'];
  const rows=data.results.map(q=>[esc(q.folio),...(grouped?[]:[esc(q.client_name)+'<br>'+esc(q.client_rut)]),
-  esc(quoteDate(q.created_at)),currency(q.amount),quoteState(q),esc(q.agreement_name||'—'),
+  esc(quoteDate(q.created_at)),currency(q.amount),statusTag(quoteState(q),q.converted||q.approved?'active':'pending'),esc(q.agreement_name||'—'),
   '<div class="actions">'+btn('Ver detalle','quote-detail',q.id)+
-  (has('change_quote')?btn('Editar / aprobar','quote-edit',q.id):'')+
-  (q.approved&&has('add_order')?btn('Generar OT','convert',q.id):'')+'</div>']);
+  (!q.converted&&has('change_quote')?btn('Editar / aprobar','quote-edit',q.id):'')+
+  (!q.converted&&q.approved&&has('add_order')?btn('Generar OT','convert',q.id):'')+'</div>']);
  const title=grouped?'Cliente: '+esc(first.client_name)+' · '+esc(first.client_rut):'Resultados';
  screen.insertAdjacentHTML('beforeend',panel(title,rows.length?table(headers,rows)+pages(data):note('No se encontraron cotizaciones para esta búsqueda.')));
 }
@@ -705,7 +745,7 @@ document.addEventListener('submit',async e=>{
  try{switch(f.dataset.form){
  case 'membership-start':location.href='formulario_remoto.html?registro_convenio=1&convenio='+encodeURIComponent(data.code.trim());return;
  case 'membership-status':{const result=await api('membership/status/',{method:'POST',body:data});f.querySelector('.form-feedback').textContent='Estado: '+result.state;return;}
- case 'representative-review':{const id=data.id;delete data.id;await api('membership/queue/'+id+'/',{method:'POST',body:data});break;}
+ case 'representative-review':{if(data.approved==='false'&&!data.confirmed)throw new Error('Marca la confirmación para rechazar la solicitud.');const id=data.id;delete data.id;delete data.confirmed;await api('membership/queue/'+id+'/',{method:'POST',body:data});break;}
  case 'cart-add':{const items=readCart(),product=Number(data.product),quantity=Number(data.quantity),variant=data.variant;const line=items.find(i=>i.product===product&&i.variant===variant);if(line){if(line.quantity+quantity>99)throw new Error('El máximo por variante es 99.');line.quantity+=quantity;}else{if(items.length>=20)throw new Error('El carrito admite hasta 20 selecciones.');items.push({product,variant,quantity});}saveCart(items);location.href='carrito.html';return;}
  case 'cart-recipe':await api('my-prescriptions/',{method:'POST',body:new FormData(f)});await renderCart();message('Receta privada guardada. Selecciónala para continuar.');return;
  case 'checkout':{const payload={...data,items:readCart(),contact_authorized:!!data.contact_authorized,idempotency_key:f.dataset.key};if(!payload.prescription)delete payload.prescription;const result=await api('checkout/',{method:'POST',body:payload});saveCart([]);screen.innerHTML=head('Solicitud registrada','El personal revisará tu selección.')+note('Referencia: '+result.reference)+link('Volver al catálogo','catalogo.html');return;}
@@ -772,15 +812,16 @@ document.addEventListener('submit',async e=>{
  case 'inquiry-filter':{const filter=new URLSearchParams(data);for(const key of ['verification','agreement'])if(params.get(key))filter.set(key,params.get(key));location.href='solicitudes.html?'+filter;return;}
  case 'agreement':{const id=data.id;delete data.id;for(const field of ['starts_on','ends_on'])data[field]=data[field]||null;await api('agreements/'+(id?id+'/':''),{method:id?'PATCH':'POST',body:data});break;}
  case 'quote-search':{const filter=new URLSearchParams();for(const [key,value] of Object.entries(data))if(value.trim())filter.set(key,value.trim());location.href='cotizaciones.html?'+filter;return;}
+ case 'agreement-disable':{if(!data.confirmed)throw new Error('Confirma la desactivación antes de continuar.');await api('agreements/'+data.id+'/',{method:'PATCH',body:{active:false}});break;}
  case 'agreement-code':{if(!data.confirmed)throw new Error('Confirma el cambio antes de aplicarlo.');await api('agreements/'+data.id+'/manage-code/',{method:'POST',body:{operation:data.operation}});break;}
- case 'agreement-review':{const id=data.id;delete data.id;await api('agreement-verifications/'+id+'/',{method:'POST',body:data});break;}
+ case 'agreement-review':{if(data.approved==='false'&&!data.confirmed)throw new Error('Marca la confirmación para rechazar la solicitud.');const id=data.id;delete data.id;delete data.confirmed;await api('agreement-verifications/'+id+'/',{method:'POST',body:data});break;}
  case 'agenda-block':{data.day=data.block_day;delete data.block_day;if(!data.slot)delete data.slot;await api('agenda/blocks/',{method:'POST',body:data});break;}
  case 'inquiry':data.source=params.get('origen')==='qr'?'qr':'web';if(data.kind!=='registro'){delete data.registration_rut;delete data.agreement_code;delete data.agreement_role;}data.contact_authorized=!!data.contact_authorized;data.idempotency_key=f.dataset.key;data.day=data.day||null;data.slot=data.slot||null;{const r=await api('inquiries/',{method:'POST',body:data});screen.innerHTML=head('Solicitud registrada')+note(r.detail)+`<p>Referencia: ${esc(r.reference)}</p>`+link('Volver al inicio','index.html');return;}
  case 'client':{const id=data.id;delete data.id;data.consent=!!data.consent;data.active=data.active==='true';data.agreement=data.agreement||null;await api('clients/'+(id?id+'/':''),{method:id?'PATCH':'POST',body:data});break;}
  case 'recipe':await api('prescriptions/',{method:'POST',body:new FormData(f)});break;
  case 'quote':{const id=data.id;delete data.id;data.approved=!!data.approved;data.agreement=data.agreement||null;data.prescription=data.prescription||null;data.characteristics=data.product_type==='particular'?{frame:data.frame,crystal:data.crystal,focus:data.focus}:{security_model:data.frame,security_color:data.crystal,focus:data.focus};delete data.frame;delete data.crystal;delete data.focus;await api('quotes/'+(id?id+'/':''),{method:id?'PATCH':'POST',body:data});break;}
  case 'warranty':{const id=data.id;delete data.id;await api('warranties/'+(id?id+'/':''),{method:id?'PATCH':'POST',body:data});break;}
- case 'state':await api(data.endpoint,{method:data.endpoint.startsWith('orders/')?'POST':'PATCH',body:{status:data.status}});break;
+ case 'state':if(['Cerrada','Cancelada','Disponible para retiro'].includes(data.status)&&!data.confirmed)throw new Error('Confirma este cambio de estado.');await api(data.endpoint,{method:data.endpoint.startsWith('orders/')?'POST':'PATCH',body:{status:data.status}});break;
  case 'inventory':await api('inventory/'+data.id+'/',{method:'PATCH',body:{quantity:Number(data.quantity)}});break;
  case 'settings':await api('configuration/',{method:'PATCH',body:data});break;
  case 'delivery':if(!data.accepted||!signature)throw new Error('Debe aceptar la conformidad y dibujar la firma.');{const r=await api('orders/'+review.order+'/deliver/',{method:'POST',body:{accepted:true,signature,review_token:review.review_token,pickup_proof:pickupReview?.order===review.order?pickupReview.proof:undefined,observations:data.observations}});screen.innerHTML=head('Entrega registrada')+note('La orden está entregada. El documento y su referencia quedaron guardados en el servidor.')+btn('Ver documento / PDF','file','receipts/'+r.id+'/pdf/')+link('Documentos','documentos.html');return;}
@@ -798,22 +839,31 @@ document.addEventListener('submit',async e=>{
 document.addEventListener('click',async e=>{const b=e.target.closest('[data-op]');if(!b)return;const id=b.dataset.id;try{switch(b.dataset.op){
  case 'cart-remove':{const items=readCart();items.splice(Number(id),1);saveCart(items);await renderCart();break;}
  case 'purchase-detail':await purchaseDetail(id);break;
- case 'representative-review':dialog('Validar pertenencia',form('representative-review',`<input name="id" type="hidden" value="${esc(id)}">`+select('approved','Decisión',[['true','Confirmar pertenencia'],['false','Rechazar']])+input('note','Referencia interna de la verificación')));break;
+ case 'representative-review':dialog('Validar pertenencia',form('representative-review',`<input name="id" type="hidden" value="${esc(id)}">`+select('approved','Decisión',[['true','Confirmar pertenencia'],['false','Rechazar']])+input('note','Referencia interna de la verificación')+check('confirmed','Confirmo el rechazo si elegí Rechazar.')));break;
  case 'reload':location.reload();break;
  case 'agenda-unblock':{const [day,slot]=id.split('|');await api('agenda/blocks/',{method:'POST',body:{day,...(slot?{slot}:{}),active:false}});await render();message('Bloqueo liberado.');break;}
  case 'attention-qr':await showAttentionQR();break;
  case 'qr-copy':await navigator.clipboard.writeText(id);message('Enlace copiado.');break;
  case 'qr-enlarge':document.querySelector('.attention-qr').classList.toggle('enlarged');break;
  case 'qr-print':printAttentionQR();break;
- case 'inquiry-detail':{const r=await api('inquiries/'+id+'/');dialog('Solicitud #'+r.id,`<dl><dt>Solicitante</dt><dd>${esc(r.name)}</dd><dt>Contacto</dt><dd>${esc(r.phone)} · ${esc(r.email||'No informado')}</dd><dt>Tipo y origen</dt><dd>${esc(r.kind)} · ${esc(r.source==='qr'?'Código QR':'Sitio web')}</dd><dt>Recepción</dt><dd>${date(r.created_at)}</dd><dt>Atención solicitada</dt><dd>${esc(r.service)} · ${esc(r.day||'')} ${esc(r.slot||'')}</dd><dt>Motivo y observaciones</dt><dd>${esc(r.reason)}</dd><dt>Estado</dt><dd>${esc(r.status)}</dd></dl>${r.kind==='compra'?btn('Detalle de compra','purchase-detail',r.id):''}${r.agreement?`<p>Convenio #${esc(r.agreement)} · ${esc(r.agreement_role)} · ${esc(r.verification_state)}</p>`:''}${r.verification_state==='pendiente'&&has('change_agreement')?btn('Validar pertenencia','agreement-review',r.id):''}${r.product?`<p>Producto de catálogo #${esc(r.product)}</p>`:''}${r.prescription&&has('view_prescription')?btn('Ver receta autorizada','file','prescriptions/'+r.prescription+'/file/'):''}${r.client?link('Revisar ficha asociada','detalle_cliente.html?cliente='+r.client):''}`);break;}
+ case 'agreement-print':{
+  document.body.classList.add('printing-agreement');
+  const done=()=>document.body.classList.remove('printing-agreement');
+  window.addEventListener('afterprint',done,{once:true});
+  try{window.print();}catch(e){done();throw e;}
+  break;
+ }
+ case 'inquiry-detail':{const r=await api('inquiries/'+id+'/');dialog('Solicitud #'+r.id,`<dl><dt>Solicitante</dt><dd>${esc(r.name)}</dd><dt>Contacto</dt><dd>${esc(r.phone)} · ${esc(r.email||'No informado')}</dd><dt>Tipo y origen</dt><dd>${esc(r.kind)} · ${esc(r.source==='qr'?'Código QR':'Sitio web')}</dd><dt>Recepción</dt><dd>${date(r.created_at)}</dd><dt>Atención solicitada</dt><dd>${esc(r.service)} · ${esc(r.day||'')} ${esc(r.slot||'')}</dd><dt>Motivo y observaciones</dt><dd>${esc(r.reason)}</dd><dt>Estado</dt><dd>${esc(r.status)}</dd></dl>${r.kind==='compra'?btn('Detalle de compra','purchase-detail',r.id):''}${r.agreement?`<p>Convenio ${esc(r.agreement_name||'asociado')} · ${esc(r.agreement_role)} · ${esc(r.verification_state)}</p>`:''}${r.verification_state==='pendiente'&&has('change_agreement')?btn('Validar pertenencia','agreement-review',r.id):''}${r.product?`<p>Producto de catálogo #${esc(r.product)}</p>`:''}${r.prescription&&has('view_prescription')?btn('Ver receta autorizada','file','prescriptions/'+r.prescription+'/file/'):''}${r.client?link('Revisar ficha asociada','detalle_cliente.html?cliente='+r.client):''}`);break;}
  case 'logout':await api('logout/',{method:'POST',body:{}});location.href='index.html';break;
  case 'agreement-visit':{const result=await api('clients/'+id+'/agreement/',{method:'POST',body:{}});message(result.detail);break;}
  case 'agreement-new':await agreementForm();break;
  case 'agreement-edit':await agreementForm(id);break;
  case 'agreement-code':await agreementCodeDialog(id);break;
+ case 'agreement-disable':dialog('Desactivar convenio',note('Las nuevas solicitudes y los beneficios quedan inactivos mientras el convenio esté desactivado.')+
+  form('agreement-disable',hidden('id',id)+check('confirmed','Confirmo que deseo desactivar el convenio.'),'Desactivar convenio'));break;
  case 'agreement-code-history':{const [agreement,number]=id.split(':');await agreementCodeDialog(agreement,Number(number));break;}
- case 'agreement-qr':{const data=await api('agreements/'+id+'/qr/');dialog('QR de convenio',`<div class="attention-qr"><img alt="Código QR del convenio" src="/api/agreements/${esc(id)}/qr/?image=png"><p class="qr-url">${esc(data.url)}</p>${btn('Copiar enlace','qr-copy',data.url)}</div>`);break;}
- case 'agreement-review':dialog('Validar pertenencia',form('agreement-review',`<input name="id" type="hidden" value="${esc(id)}">`+select('approved','Decisión',[['true','Aprobar'],['false','Rechazar']])+select('method','Método',[['nomina','Nómina autorizada'],['responsable','Responsable del convenio'],['presencial','Validación presencial']])+input('note','Referencia de verificación, sin datos sensibles')));break;
+ case 'agreement-qr':await showAgreementQR(id);break;
+ case 'agreement-review':dialog('Validar pertenencia',form('agreement-review',`<input name="id" type="hidden" value="${esc(id)}">`+select('approved','Decisión',[['true','Aprobar'],['false','Rechazar']])+select('method','Método',[['nomina','Nómina autorizada'],['responsable','Responsable del convenio'],['presencial','Validación presencial']])+input('note','Referencia de verificación, sin datos sensibles')+check('confirmed','Confirmo el rechazo si elegí Rechazar.')));break;
  case 'request-product':await productRequestForm(id);break;
 
  case 'union-new':showUnionForm();break;
@@ -861,8 +911,8 @@ document.addEventListener('click',async e=>{const b=e.target.closest('[data-op]'
  case 'quote-detail':await quoteDetail(id);break;
  case 'quote-edit':await quoteForm(id);break;
  case 'convert':await api('quotes/'+id+'/convert/',{method:'POST',body:{}});await render();message('OT registrada.');break;
- case 'order-state':dialog('Actualizar pedido',form('state',`<input name="endpoint" type="hidden" value="orders/${esc(id)}/state/">`+select('status','Estado',states)));break;
- case 'inquiry-state':dialog('Revisar solicitud',form('state',`<input name="endpoint" type="hidden" value="inquiries/${esc(id)}/">`+select('status','Estado',['Nueva','En revisión','Contactada','Cerrada','Cancelada'])));break;
+ case 'order-state':dialog('Actualizar pedido',form('state',`<input name="endpoint" type="hidden" value="orders/${esc(id)}/state/">`+select('status','Estado',states)+check('confirmed','Confirmo el cambio si dejo el pedido listo para retiro.')));break;
+ case 'inquiry-state':dialog('Revisar solicitud',form('state',`<input name="endpoint" type="hidden" value="inquiries/${esc(id)}/">`+select('status','Estado',['Nueva','En revisión','Contactada','Cerrada','Cancelada'])+check('confirmed','Confirmo el cambio si cierro o cancelo la solicitud.')));break;
  case 'warranty-new':await warrantyForm();break;
  case 'warranty-edit':await warrantyForm(id);break;
  case 'inventory-edit':{const i=await api('inventory/'+id+'/');dialog('Actualizar cantidad',form('inventory',`<input name="id" type="hidden" value="${esc(id)}">`+input('quantity','Cantidad','number',i.quantity,'required min="0" step="1"')));break;}
@@ -874,25 +924,107 @@ document.querySelector('[data-close-dialog]')?.addEventListener('click',close);
 if(page==='dashboard'&&params.get('qr')==='1')document.addEventListener('amaru-rendered',()=>{if(has('view_inquiry'))showAttentionQR().catch(e=>message(e.message));},{once:true});
 const publicHeader=document.querySelector('.public-header');
 if(publicHeader)new ResizeObserver(()=>document.documentElement.style.setProperty('--public-header-height',publicHeader.offsetHeight+'px')).observe(publicHeader);
-for(const toggle of document.querySelectorAll('[data-menu], [data-public-menu]')){
- const nav=document.getElementById(toggle.getAttribute('aria-controls'));
- if(!nav)continue;
- const header=toggle.closest('header');
- if(toggle.hasAttribute('data-menu')){
-  new ResizeObserver(()=>nav.style.setProperty('--staff-menu-top',header.offsetHeight+'px')).observe(header);
- }
- function setMenu(open){nav.classList.toggle('open',open);toggle.setAttribute('aria-expanded',String(open));}
- toggle.addEventListener('click',()=>setMenu(!nav.classList.contains('open')));
+const publicToggle=document.querySelector('[data-public-menu]');
+if(publicToggle){
+ const nav=document.getElementById(publicToggle.getAttribute('aria-controls'));
+ function setPublicMenu(open){nav.classList.toggle('open',open);publicToggle.setAttribute('aria-expanded',String(open));}
+ publicToggle.addEventListener('click',()=>setPublicMenu(!nav.classList.contains('open')));
  document.addEventListener('keydown',event=>{
-  if(event.key==='Escape'&&nav.classList.contains('open')&&!document.querySelector('dialog[open]')){
-   setMenu(false);toggle.focus();
+  if(event.key==='Escape'&&nav.classList.contains('open')&&!document.querySelector('dialog[open]')){setPublicMenu(false);publicToggle.focus();}
+ });
+ nav.addEventListener('click',event=>{if(event.target.closest('a[href]'))setPublicMenu(false);});
+}
+const staffToggle=document.querySelector('[data-menu]');
+if(staffToggle){
+ const nav=document.getElementById(staffToggle.getAttribute('aria-controls'));
+ const app=nav.closest('.app');
+ const heading=staffToggle.closest('.topbar');
+ const mobile=matchMedia('(max-width: 900px)');
+ const backdrop=document.createElement('div');
+ backdrop.className='staff-menu-backdrop';
+ backdrop.hidden=true;
+ backdrop.setAttribute('aria-hidden','true');
+ app.append(backdrop);
+ const key='amaru-staff-menu-collapsed';
+ let collapsed=false;
+ try{collapsed=localStorage.getItem(key)==='true';}catch{}
+ let drawer=false;
+ const resize=new ResizeObserver(()=>{
+  app.style.setProperty('--staff-menu-top',heading.offsetHeight+'px');
+  document.documentElement.style.setProperty('--public-header-height',heading.offsetHeight+'px');
+ });
+ resize.observe(heading);
+ function apply(){
+  app.classList.toggle('menu-collapsed',!mobile.matches&&collapsed);
+  nav.classList.toggle('open',mobile.matches&&drawer);
+  backdrop.hidden=!(mobile.matches&&drawer);
+  const expanded=mobile.matches?drawer:!collapsed;
+  nav.inert=!expanded;
+  staffToggle.setAttribute('aria-expanded',String(expanded));
+  staffToggle.textContent=expanded?'Ocultar menú':'Mostrar menú';
+ }
+ function closeDrawer(restoreFocus){
+  if(!drawer)return;
+  drawer=false;
+  apply();
+  if(restoreFocus)staffToggle.focus();
+ }
+ function links(){return [...nav.querySelectorAll('a[href]')].filter(a=>!a.hidden&&a.getClientRects().length);}
+ staffToggle.addEventListener('click',()=>{
+  if(mobile.matches){
+   if(drawer){closeDrawer(true);return;}
+   drawer=true;apply();links()[0]?.focus();
+  }else{
+   collapsed=!collapsed;
+   try{localStorage.setItem(key,String(collapsed));}catch{}
+   apply();
   }
  });
- nav.addEventListener('click',event=>{if(event.target.closest('a[href]'))setMenu(false);});
+ backdrop.addEventListener('click',()=>closeDrawer(true));
+ mobile.addEventListener('change',()=>{
+  const inside=nav.contains(document.activeElement);
+  drawer=false;apply();
+  if(inside&&nav.inert)staffToggle.focus();
+ });
+ nav.addEventListener('click',event=>{if(event.target.closest('a[href]'))closeDrawer(true);});
+ document.addEventListener('keydown',event=>{
+  if(!drawer||document.querySelector('dialog[open]'))return;
+  if(event.key==='Escape'){event.preventDefault();closeDrawer(true);}
+  if(event.key==='Tab'){
+   const controls=[staffToggle,...links()];
+   const index=controls.indexOf(document.activeElement);
+   event.preventDefault();
+   controls[(index+(event.shiftKey?-1:1)+controls.length)%controls.length].focus();
+  }
+ });
+ apply();
 }
 (async()=>{try{
  session=await api('session/');csrf=session.csrf;
  if(session.authenticated)document.querySelector('[data-signup-nav]')?.remove();
+ const staffNav=document.querySelector('.sidebar nav');
+ if(staffNav){
+  const items=[
+   [has('view_agreement'),'Convenios','convenios.html'],
+   [has('change_union'),'Sindicatos','sindicatos.html'],
+   [session.django_admin,'Administración del sistema','/admin/'],
+  ];
+  for(const [allowed,label,route] of items){
+   if(!allowed)continue;
+   const a=document.createElement('a');
+   a.href=route;a.className='nav-link';
+   const dot=document.createElement('span');
+   dot.className='nav-dot';dot.setAttribute('aria-hidden','true');
+   a.append(dot,label);
+   if(route===page+'.html'){a.classList.add('active');a.setAttribute('aria-current','page');}
+   staffNav.append(a);
+  }
+  if(['convenios','sindicatos'].includes(page)){
+   for(const a of staffNav.querySelectorAll('[aria-current="page"]')){
+    if(a.getAttribute('href')!==page+'.html'){a.removeAttribute('aria-current');a.classList.remove('active');}
+   }
+  }
+ }
  const navigation={clientes:'view_client',recetas:'view_prescription',cotizaciones:'view_quote',ordenes:'view_order',recepcion:'add_receipt',documentos:'view_receipt',solicitudes:'view_inquiry',garantias:'view_warranty',inventario:'view_inventory'};
  document.querySelectorAll('.sidebar a[href]').forEach(a=>{const route=a.getAttribute('href').split('.')[0];if(navigation[route]&&!has(navigation[route]))a.hidden=true;});
  if(session.authenticated&&!has('view_order')&&['recepcion','documentos'].includes(page)){

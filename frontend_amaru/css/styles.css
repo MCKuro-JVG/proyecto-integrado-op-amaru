@@ -1,9 +1,12 @@
 /* Identidad visual propia. Todas las pantallas son propuestas con datos DEMO. */
 :root {
   --amaru-salmon: #ff7e70;
-  --amaru-ink: #191617;
+  --amaru-ink: #35282a;
   --amaru-accent: #8c3037;
   --amaru-tint: #fff1ef;
+  --amaru-soft: #ffd8d2;
+  --amaru-deep: #b84b48;
+  --amaru-surface: #ffffff;
   --amaru-paper: #fffafa;
   --amaru-border: #e9ceca;
   --amaru-shadow: rgba(70, 35, 30, .12);

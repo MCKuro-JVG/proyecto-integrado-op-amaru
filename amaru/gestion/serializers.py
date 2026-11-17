@@ -95,10 +95,11 @@ class QuoteSerializer(serializers.ModelSerializer):
     client_name = serializers.CharField(source='client.name', read_only=True)
     client_rut = serializers.CharField(source='client.rut', read_only=True)
     agreement_name = serializers.CharField(source='agreement.name', read_only=True, allow_null=True)
+    converted = serializers.BooleanField(read_only=True, default=False)
     lines=serializers.SerializerMethodField()
     class Meta:
         model=Quote
-        fields=['id','folio','client','prescription','product_type','category','agreement','characteristics','amount','approved','notes','created_at','updated_at','lines','client_name','client_rut','agreement_name']
+        fields=['id','folio','client','prescription','product_type','category','agreement','characteristics','amount','approved','notes','created_at','updated_at','lines','client_name','client_rut','agreement_name','converted']
         read_only_fields=['created_at','updated_at']
     def get_lines(self,obj):
         return [{'product':l.product_id,'name':l.product_name or l.product.name,'variant':l.variant,'quantity':l.quantity,'unit_price':str(l.unit_price)} for l in obj.lines.all()]
@@ -161,10 +162,11 @@ class WarrantySerializer(serializers.ModelSerializer):
 
 class InquirySerializer(serializers.ModelSerializer):
     agreement_code = serializers.CharField(required=False, allow_blank=True, max_length=24, write_only=True)
+    agreement_name = serializers.CharField(source='agreement.name', read_only=True, allow_null=True)
     website=serializers.CharField(required=False,allow_blank=True,write_only=True,max_length=200)
     class Meta:
         model=Inquiry
-        fields=['id','token','idempotency_key','kind','name','phone','email','service','reason','contact_authorized','day','slot','status','created_at','source','registration_rut','client','product','prescription','agreement_code','agreement','agreement_role','verification_state','verification_method','verification_note','verified_at','website']
+        fields=['id','token','idempotency_key','kind','name','phone','email','service','reason','contact_authorized','day','slot','status','created_at','source','registration_rut','client','product','prescription','agreement_code','agreement','agreement_name','agreement_role','verification_state','verification_method','verification_note','verified_at','website']
         read_only_fields=['token','status','created_at','client','product','prescription','agreement','verification_state','verification_method','verification_note','verified_at']
         extra_kwargs={'idempotency_key':{'validators':[]},'email':{'required':False,'allow_blank':True},'reason':{'trim_whitespace':True}}
     def validate(self,data):

@@ -6,12 +6,13 @@ from datetime import date, datetime, time, timedelta
 from django.utils import timezone
 from pathlib import Path
 from django.conf import settings
+from django.contrib import admin
 from django.contrib.auth import authenticate, login, logout
 from django.core import signing
 from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction, IntegrityError
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.http import HttpResponse, FileResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.middleware.csrf import get_token
@@ -144,7 +145,9 @@ class CatalogManagement(Records):
 
 
 class Quotes(Records):
-    queryset=Quote.objects.select_related('client','prescription','agreement').prefetch_related('lines__product')
+    queryset = (Quote.objects.select_related('client', 'prescription', 'agreement')
+                .prefetch_related('lines__product')
+                .annotate(converted=Exists(Order.objects.filter(quote_id=OuterRef('pk')))))
     serializer_class=QuoteSerializer
 
     def get_queryset(self):
@@ -310,7 +313,7 @@ class Inquiries(viewsets.GenericViewSet):
     def get_permissions(self):
         return [permissions.AllowAny()] if self.action=='create' else super().get_permissions()
     def get_queryset(self):
-        qs=self.queryset.select_related('client').order_by('-created_at')
+        qs=self.queryset.select_related('client','agreement').order_by('-created_at')
         state=self.request.query_params.get('status','')
         verification=self.request.query_params.get('verification','')
         if verification=='all': qs=qs.exclude(verification_state='')
@@ -408,6 +411,12 @@ class Inventories(Records):
 class Agreements(Records):
     queryset=Agreement.objects.select_related('union')
     serializer_class=AgreementSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if self.action == 'list' and self.request.query_params.get('tipo') == 'tradicional':
+            queryset = queryset.filter(union__isnull=True)
+        return queryset
 
     @action(detail=True, methods=['post'], url_path='manage-code', permission_classes=[permissions.IsAuthenticated])
     @transaction.atomic
@@ -564,7 +573,11 @@ def session(request):
     union = representative_union(user) if user.is_authenticated else None
     membership = membership_for(client) if client and client.active else None
     representative = representative_for(user) if user.is_authenticated else None
-    response=Response({'union': bool(union), 'mining': bool(membership), 'representative': bool(representative), 'authenticated':user.is_authenticated,'username':user.get_username() if user.is_authenticated else None,
+    django_admin = admin.site.has_permission(request) and (
+        user.is_superuser or user.has_perm('auth.view_user')
+        or user.has_perm('gestion.change_siteconfiguration')
+    )
+    response=Response({'union': bool(union), 'mining': bool(membership), 'representative': bool(representative), 'authenticated':user.is_authenticated,'django_admin': django_admin,'username':user.get_username() if user.is_authenticated else None,
         'client_id':client.pk if client else None,'permissions':sorted(user.get_all_permissions()) if user.is_authenticated else [],
         'csrf':token,'storage':'r2' if settings.R2_ENABLED else 'local-private'})
     response['Cache-Control']='no-store'

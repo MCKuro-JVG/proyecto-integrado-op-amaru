@@ -1,9 +1,17 @@
 {% extends "admin/base.html" %}
 {% load static %}
 {% block title %}{{ title }} | Ópticas Amaru{% endblock %}
-{% block extrahead %}{{ block.super }}<link rel="stylesheet" href="{% static 'brand.css' %}?v=2670ecb9bf18">{% include "brand_favicons.html" %}{% endblock %}
+{% block extrahead %}{{ block.super }}<link rel="stylesheet" href="{% static 'brand.css' %}?v=a83833204483">{% include "brand_favicons.html" %}{% endblock %}
 {% block branding %}
 <div id="site-name"><a href="{% url 'admin:index' %}">
   <img class="brand-eye" src="{% static 'interfaz/img/ojo-amaru-oficial.png' %}" width="96" height="38" alt="Óptica Amaru — Inicio">
 </a></div>
+{% endblock %}
+
+{% block userlinks %}
+  {% if site_url %}<a href="{{ site_url }}">Volver a la aplicación</a> / {% endif %}
+  <a href="{% url 'admin:password_change' %}">Cambiar contraseña</a> /
+  <form id="logout-form" method="post" action="{% url 'admin:logout' %}">
+    {% csrf_token %}<button type="submit">Cerrar sesión</button>
+  </form>
 {% endblock %}
