@@ -113,7 +113,7 @@ def _accept_receipt_atomic(order_id,user,accepted,signature,attempt,terms,expect
 
 
 @transaction.atomic
-def receive_inquiry(data,actor):
+def receive_inquiry(data, actor, *, submitted_code=None):
     """Entrada pública: no cambia fichas existentes ni crea cuentas de usuario."""
     from datetime import timedelta
     from rest_framework.exceptions import APIException
@@ -136,7 +136,9 @@ def receive_inquiry(data,actor):
     defaults = dict(data)
     if data.get("agreement"):
         agreement = Agreement.objects.select_for_update().get(pk=data["agreement"].pk)
-        if agreement.has_managed_union or not agreement.available or (data.get("agreement_role") == "carga" and not agreement.allow_dependents):
+        if (not agreement.code_available
+                or (submitted_code is not None and agreement.code != submitted_code)
+                or (data.get("agreement_role") == "carga" and not agreement.allow_dependents)):
             raise Conflict("El convenio ya no está disponible para este registro.")
         defaults["verification_state"] = "pendiente"
     obj,created=Inquiry.objects.get_or_create(idempotency_key=data['idempotency_key'],defaults=defaults)
@@ -150,5 +152,7 @@ def receive_inquiry(data,actor):
         obj.client=client;obj.save(update_fields=['client'])
         if new: audit(actor,'Ficha pública pendiente de revisión; sin cuenta autenticada',client)
     if obj.kind=='agenda': AppointmentReservation.objects.create(inquiry=obj,day=obj.day,slot=obj.slot)
+    if obj.agreement_id:
+        audit(actor, 'Código de convenio: solicitud recibida', obj.agreement)
     audit(actor,'Solicitud pública recibida: '+obj.source,obj)
     return obj,True

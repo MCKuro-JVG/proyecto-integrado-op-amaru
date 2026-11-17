@@ -1,2 +1,25 @@
 .brand-eye { display: block; width: clamp(76px, 8vw, 96px); max-width: 100%; height: auto; }
 .institutional-logo { display: block; width: min(100%, 220px); height: auto; margin-bottom: 16px; }
+
+:root {
+  --amaru-salmon: #ff7e70;
+  --amaru-ink: #191617;
+  --amaru-accent: #8c3037;
+  --amaru-tint: #fff1ef;
+  --amaru-paper: #fffafa;
+  --amaru-border: #e9ceca;
+  --amaru-shadow: rgba(70, 35, 30, .12);
+}
+body:has(.layout) { --orange: var(--amaru-salmon); --dark-orange: var(--amaru-accent); --line: var(--amaru-border); --background: var(--amaru-paper); }
+body:has(.layout) .topbar { position: sticky; top: 0; z-index: 10; box-shadow: 0 3px 10px var(--amaru-shadow); }
+body:has(.layout) .layout aside { position: sticky; top: 84px; align-self: start; max-height: calc(100dvh - 84px); overflow: auto; background: var(--amaru-tint); }
+body:has(.layout) .primary { background: var(--amaru-salmon); border-color: var(--amaru-salmon); color: var(--amaru-ink); }
+body:has(.layout) :is(button, .button):focus-visible { outline: 3px solid var(--amaru-accent); }
+@media (max-width: 850px) {
+  body:has(.layout) .layout aside.open { position: fixed; top: 84px; left: 0; width: min(82vw, 300px); z-index: 9; box-shadow: 0 4px 16px var(--amaru-shadow); }
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  body:has(.layout) :is(button, .button) { transition: transform 180ms ease, box-shadow 180ms ease; }
+  body:has(.layout) :is(button, .button):not(:disabled):hover { transform: translateY(-2px); box-shadow: 0 6px 14px var(--amaru-shadow); }
+  body:has(.layout) :is(button, .button):not(:disabled):active { transform: none; }
+}

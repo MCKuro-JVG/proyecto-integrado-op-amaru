@@ -11,6 +11,7 @@ class Agreement(models.Model):
     name = models.CharField('empresa / sindicato', max_length=180, unique=True)
     active = models.BooleanField('activo', default=True)
     code = models.CharField(max_length=24, unique=True, null=True, blank=True, editable=False)
+    code_enabled = models.BooleanField(default=True)
     starts_on = models.DateField(null=True, blank=True)
     ends_on = models.DateField(null=True, blank=True)
     contact_name = models.CharField(max_length=180, blank=True)
@@ -29,11 +30,13 @@ class Agreement(models.Model):
             return False
         return self.active and (not self.starts_on or self.starts_on <= today) and (not self.ends_on or self.ends_on >= today)
 
+    @property
+    def code_available(self):
+        return bool(self.code and self.code_enabled and self.available and not self.has_managed_union)
+
     def save(self, *args, **kwargs):
-        if not self.code:
-            self.code = uuid.uuid4().hex[:16]
-            if kwargs.get("update_fields") is not None:
-                kwargs["update_fields"] = set(kwargs["update_fields"]) | {"code"}
+        if self._state.adding and not self.code:
+            self.code = uuid.uuid4().hex[:20]
         super().save(*args, **kwargs)
 
     def __str__(self):

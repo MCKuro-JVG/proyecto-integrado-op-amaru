@@ -92,10 +92,13 @@ class ProductSerializer(serializers.ModelSerializer):
 
 class QuoteSerializer(serializers.ModelSerializer):
     folio=serializers.CharField(read_only=True)
+    client_name = serializers.CharField(source='client.name', read_only=True)
+    client_rut = serializers.CharField(source='client.rut', read_only=True)
+    agreement_name = serializers.CharField(source='agreement.name', read_only=True, allow_null=True)
     lines=serializers.SerializerMethodField()
     class Meta:
         model=Quote
-        fields=['id','folio','client','prescription','product_type','category','agreement','characteristics','amount','approved','notes','created_at','updated_at','lines']
+        fields=['id','folio','client','prescription','product_type','category','agreement','characteristics','amount','approved','notes','created_at','updated_at','lines','client_name','client_rut','agreement_name']
         read_only_fields=['created_at','updated_at']
     def get_lines(self,obj):
         return [{'product':l.product_id,'name':l.product_name or l.product.name,'variant':l.variant,'quantity':l.quantity,'unit_price':str(l.unit_price)} for l in obj.lines.all()]
@@ -189,7 +192,7 @@ class InquirySerializer(serializers.ModelSerializer):
         role = data.get("agreement_role", "")
         if code:
             agreement = Agreement.objects.filter(code=code).first()
-            if data["kind"] != "registro" or not agreement or not agreement.available or hasattr(agreement, "union"):
+            if data["kind"] != "registro" or not agreement or not agreement.code_available:
                 raise serializers.ValidationError({"agreement_code": "El convenio no está disponible para este registro."})
             if role not in ("titular", "carga") or (role == "carga" and not agreement.allow_dependents):
                 raise serializers.ValidationError({"agreement_role": "Selecciona una calidad permitida para el convenio."})
@@ -221,11 +224,18 @@ class InventorySerializer(serializers.ModelSerializer):
 
 class AgreementSerializer(serializers.ModelSerializer):
     managed_union = serializers.BooleanField(read_only=True, source='has_managed_union')
+    code = serializers.SerializerMethodField()
+
+    def get_code(self, agreement):
+        request = self.context['request']
+        if request.user.has_perm('gestion.change_agreement') and not agreement.has_managed_union:
+            return agreement.code
+        return None
 
     class Meta:
         model=Agreement
-        fields = ['id', 'name', 'active', 'code', 'starts_on', 'ends_on', 'contact_name', 'contact_email', 'allow_dependents', 'available', 'managed_union']
-        read_only_fields = ['code', 'available']
+        fields = ['id', 'name', 'active', 'code', 'starts_on', 'ends_on', 'contact_name', 'contact_email', 'allow_dependents', 'available', 'managed_union', 'code_enabled', 'code_available']
+        read_only_fields = ['code', 'available', 'code_enabled', 'code_available']
 
     def validate(self, data):
         if self.instance and self.instance.has_managed_union:

@@ -1,7 +1,15 @@
 /* Identidad visual propia. Todas las pantallas son propuestas con datos DEMO. */
 :root {
-  --orange: #f97316;
-  --orange-dark: #b94708;
+  --amaru-salmon: #ff7e70;
+  --amaru-ink: #191617;
+  --amaru-accent: #8c3037;
+  --amaru-tint: #fff1ef;
+  --amaru-paper: #fffafa;
+  --amaru-border: #e9ceca;
+  --amaru-shadow: rgba(70, 35, 30, .12);
+
+  --orange: var(--amaru-salmon);
+  --orange-dark: var(--amaru-accent);
   --orange-soft: #fff0e5;
   --ink: #27313e;
   --muted: #75808d;
@@ -60,7 +68,7 @@ p { margin: 0 0 14px; }
 .page-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 25px; }
 .page-heading p { color: var(--muted); font-size: 13px; margin: 0; }
 .button { min-height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 16px; border: 1px solid #e0e5ea; border-radius: 7px; background: white; color: var(--ink); font-weight: 600; font-size: 12px; }
-.button:hover { border-color: #ebbc99; background: #fffaf5; }
+.button:hover { border-color: #ebbc99; background: var(--amaru-paper); }
 .button.primary { background: var(--orange-dark); border-color: var(--orange-dark); color: white; }
 .button.primary:hover { background: #a94209; }
 .button.soft { background: var(--orange-soft); color: var(--orange-dark); border-color: #ffe0c8; }
@@ -128,7 +136,7 @@ input::placeholder, textarea::placeholder { color: #a2aab4; }
 textarea { resize: vertical; min-height: 92px; }
 input[type=checkbox], input[type=radio] { width: 17px; height: 17px; min-height: 0; padding: 0; accent-color: var(--orange-dark); flex-shrink: 0; }
 .check { display: flex; gap: 9px; align-items: center; font-size: 12px; cursor: pointer; }
-.check-panel { border-radius: 7px; border: 1px solid #f3dfcf; padding: 14px; background: #fffaf5; }
+.check-panel { border-radius: 7px; border: 1px solid #f3dfcf; padding: 14px; background: var(--amaru-paper); }
 .help { color: var(--muted); font-size: 10px; margin-top: 6px; display: block; }
 .form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
 .tabs { display: flex; gap: 24px; border-bottom: 1px solid var(--line); margin-bottom: 22px; }

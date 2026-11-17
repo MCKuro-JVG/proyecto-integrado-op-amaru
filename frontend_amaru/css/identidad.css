@@ -1,14 +1,9 @@
 /* Paleta académica para revisión con Óptica Amaru. Los recursos oficiales conservan sus colores. */
 :root {
-  --amaru-salmon: #ff7e70;
-  --amaru-ink: #191617;
-  --amaru-accent: #922d30;
-  --amaru-tint: #fff1ef;
-  --amaru-border: #e9ceca;
   --orange: var(--amaru-accent);
   --line: var(--amaru-border);
 }
-body[data-experience="public"] { background: #fffafa; }
+body, body[data-experience="public"] { background: var(--amaru-paper); }
 .brand-eye {
   display: block;
   width: clamp(76px, 8vw, 96px);
@@ -23,7 +18,7 @@ body[data-experience="public"] { background: #fffafa; }
 .brand-feature { margin: 0; min-width: 0; }
 .hero .brand-feature { justify-self: center; width: min(100%, 280px); }
 .brand-feature--auth { margin: 0 0 20px; width: min(100%, 220px); }
-.sidebar, .staff-intro { background: var(--amaru-ink); }
+
 .hero {
   grid-template-columns: minmax(0, 1fr) minmax(0, 280px);
   background: var(--amaru-tint);
@@ -49,7 +44,7 @@ body[data-experience="public"] { background: #fffafa; }
   .hero { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .hero .brand-feature { width: min(75%, 240px); }
 }
-.sidebar .nav-heading, .sidebar-note, .staff-intro .eyebrow { color: #ffe5e1; }
+
 .hero p { color: var(--amaru-ink); }
 .sidebar .nav-link.active, .public-nav a.current, .button.primary {
   color: var(--amaru-ink);
@@ -68,3 +63,41 @@ body[data-experience="public"] { background: #fffafa; }
 
 .catalog-detail-image { display: block; max-width: min(100%, 32rem); max-height: 22rem; object-fit: contain; border-radius: 10px; }
 [data-cart-index] { max-width: 5rem; }
+
+@media screen {
+  html { scroll-padding-top: calc(var(--public-header-height, 90px) + 16px); }
+  .public-header, .topbar { position: sticky; top: 0; z-index: 20; box-shadow: 0 3px 10px var(--amaru-shadow); }
+  .topbar { height: auto; min-height: 68px; flex-wrap: wrap; padding-block: 12px; }
+  .public-header { min-height: 72px; padding-block: 12px; gap: 8px 16px; }
+  .sidebar { height: 100vh; height: 100dvh; overflow: auto; overscroll-behavior: contain; z-index: 21; }
+  .sidebar, .staff-intro { background: var(--amaru-tint); color: var(--amaru-ink); }
+  .sidebar { border-inline-end: 1px solid var(--amaru-border); }
+  .sidebar .brand { border-color: var(--amaru-border); }
+  .sidebar .nav-heading, .sidebar-note, .staff-intro .eyebrow, .staff-intro .page-heading p { color: var(--amaru-accent); }
+  .sidebar .nav-link, .sidebar-note strong, .sidebar-note a { color: var(--amaru-ink); }
+  .sidebar .nav-link:hover, .sidebar .nav-link.active { color: var(--amaru-ink); background: var(--amaru-salmon); box-shadow: none; }
+  .sidebar-note { background: white; border-color: var(--amaru-border); }
+  .demo-banner { background: var(--amaru-tint); color: var(--amaru-accent); }
+  a, .staff-entry { color: var(--amaru-accent); }
+  nav.union-nav { position: sticky; top: var(--public-header-height, 90px); z-index: 12; flex-wrap: nowrap; overflow-x: auto; padding: 8px 4px; background: var(--amaru-paper); }
+  nav.union-nav .button { flex: 0 0 auto; white-space: nowrap; }
+  nav.union-nav [aria-current="page"] { background: var(--amaru-salmon); color: var(--amaru-ink); }
+  td .actions { flex-wrap: wrap; margin: 0; }
+  td .button { white-space: normal; text-align: center; }
+  table td { overflow-wrap: anywhere; }
+}
+@media screen and (max-width: 900px) {
+  .sidebar.open { position: fixed; inset: var(--staff-menu-top, 68px) auto auto 0; width: min(82vw, 300px); height: calc(100dvh - var(--staff-menu-top, 68px)); z-index: 19; box-shadow: 0 6px 20px var(--amaru-shadow); }
+  .public-header .public-nav.open { max-height: 50vh; overflow: auto; overscroll-behavior: contain; }
+  .public-header .staff-entry { width: auto; margin-inline-start: auto; }
+  .public-header > .button { flex: 0 0 auto; width: auto; }
+  .topbar .top-actions { flex-wrap: wrap; }
+}
+.button { transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease; }
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .button:not(:disabled):not([aria-disabled="true"]):hover { transform: translateY(-2px); box-shadow: 0 6px 14px var(--amaru-shadow); }
+  .button:not(:disabled):not([aria-disabled="true"]):active { transform: translateY(0); box-shadow: 0 2px 5px var(--amaru-shadow); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .button { transition: none; }
+}

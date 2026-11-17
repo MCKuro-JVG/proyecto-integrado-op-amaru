@@ -1,5 +1,9 @@
 """API de sesión y permisos de Django. Ningún identificador sustituye la autorización."""
 import logging
+import re
+import secrets
+from datetime import date, datetime, time, timedelta
+from django.utils import timezone
 from pathlib import Path
 from django.conf import settings
 from django.contrib.auth import authenticate, login, logout
@@ -140,8 +144,64 @@ class CatalogManagement(Records):
 
 
 class Quotes(Records):
-    queryset=Quote.objects.select_related('client','prescription').prefetch_related('lines__product')
+    queryset=Quote.objects.select_related('client','prescription','agreement').prefetch_related('lines__product')
     serializer_class=QuoteSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if self.action != 'list':
+            return queryset
+
+        filters = self.request.query_params
+        rut = filters.get('rut', '').strip()
+        if rut:
+            compact = rut.replace('.', '').replace(' ', '')
+            if '-' not in compact and re.fullmatch(r'[0-9]{7,8}[0-9kK]', compact):
+                compact = f'{compact[:-1]}-{compact[-1]}'
+            try:
+                queryset = queryset.filter(client__rut=normalize_rut(compact))
+            except DjangoValidationError as exc:
+                raise ValidationError({'rut': exc.messages}) from exc
+
+        folio = filters.get('folio', '').strip().upper()
+        if folio:
+            match = re.fullmatch(r'COT-([0-9]{6,18})(?:-([0-9A-F]{12}))?', folio)
+            if not match:
+                raise ValidationError({'folio': 'Ingresa el folio COT completo o su número, por ejemplo COT-000001.'})
+            queryset = queryset.filter(pk=int(match[1]))
+            if match[2]:
+                quote = queryset.first()
+                if not quote or quote.folio != folio:
+                    queryset = queryset.none()
+
+        dates = {}
+        for key in ('desde', 'hasta'):
+            if filters.get(key):
+                try:
+                    day = date.fromisoformat(filters[key])
+                    # The upper bound is exclusive, so it includes the full final day.
+                    if key == 'hasta':
+                        day += timedelta(days=1)
+                    dates[key] = timezone.make_aware(datetime.combine(day, time.min))
+                except (ValueError, OverflowError) as exc:
+                    raise ValidationError({key: 'Ingresa una fecha válida.'}) from exc
+        if dates.get('desde') and dates.get('hasta') and dates['desde'] >= dates['hasta']:
+            raise ValidationError({'hasta': 'La fecha final debe ser igual o posterior a la inicial.'})
+        if 'desde' in dates:
+            queryset = queryset.filter(created_at__gte=dates['desde'])
+        if 'hasta' in dates:
+            queryset = queryset.filter(created_at__lt=dates['hasta'])
+
+        # Folios encode the primary key as their numeric component.
+        ordering = {
+            'fecha-desc': ('-created_at', '-pk'), 'fecha-asc': ('created_at', 'pk'),
+            'folio-asc': ('pk',), 'folio-desc': ('-pk',),
+        }
+        order = filters.get('orden', 'fecha-desc')
+        if order not in ordering:
+            raise ValidationError({'orden': 'Ordenamiento no válido.'})
+        return queryset.order_by(*ordering[order])
+
     @action(detail=True,methods=['post'],url_path='items')
     def items(self,request,pk=None):
         if not request.user.has_perm('gestion.change_quote'): raise PermissionDenied()
@@ -256,6 +316,11 @@ class Inquiries(viewsets.GenericViewSet):
         if verification=='all': qs=qs.exclude(verification_state='')
         elif verification: qs=qs.filter(verification_state=verification)
         day=self.request.query_params.get('day','')
+        agreement = self.request.query_params.get('agreement', '')
+        if agreement:
+            if not re.fullmatch(r'[0-9]{1,18}', agreement):
+                raise ValidationError('Convenio no válido.')
+            qs = qs.filter(agreement_id=agreement)
         if state: qs=qs.filter(status=state)
         if day:
             from datetime import date
@@ -275,7 +340,8 @@ class Inquiries(viewsets.GenericViewSet):
         check_submission_rate(request)
         s=self.get_serializer(data=request.data);s.is_valid(raise_exception=True)
         try:
-            obj,created=receive_inquiry(s.validated_data,request.user)
+            obj, created = receive_inquiry(s.validated_data, request.user,
+                                           submitted_code=str(request.data.get('agreement_code', '')).strip().lower())
         except IntegrityError:
             return Response({'detail':'Ese horario ya tiene una solicitud. Seleccione otro.'},status=409)
         return Response({'reference':str(obj.token),'created':created,'detail':'Solicitud registrada para revisión; no confirma una atención ni envía mensajes.'},status=201 if created else 200)
@@ -343,6 +409,48 @@ class Agreements(Records):
     queryset=Agreement.objects.select_related('union')
     serializer_class=AgreementSerializer
 
+    @action(detail=True, methods=['post'], url_path='manage-code', permission_classes=[permissions.IsAuthenticated])
+    @transaction.atomic
+    def manage_code(self, request, pk=None):
+        if not request.user.has_perm('gestion.change_agreement'):
+            raise PermissionDenied()
+        agreement = get_object_or_404(Agreement.objects.select_for_update(), pk=pk)
+        if agreement.has_managed_union:
+            raise ValidationError('Los sindicatos con cuentas se administran desde su panel.')
+        operation = request.data.get('operation')
+        if operation == 'rotate':
+            previous = agreement.code
+            agreement.code = secrets.token_hex(10)
+            agreement.code_enabled = True
+            event = 'regenerado' if previous else 'creado'
+        elif operation == 'revoke' and agreement.code:
+            agreement.code = None
+            agreement.code_enabled = False
+            event = 'revocado'
+        elif operation in ('enable', 'disable') and agreement.code:
+            agreement.code_enabled = operation == 'enable'
+            event = 'habilitado' if agreement.code_enabled else 'desactivado'
+        else:
+            raise ValidationError('Acción no válida para el estado del código.')
+        try:
+            with transaction.atomic():
+                agreement.save(update_fields=['code', 'code_enabled'])
+        except IntegrityError as exc:
+            raise ValidationError('No se pudo asignar un código único. Intenta de nuevo.') from exc
+        audit(request.user, f'Código de convenio: {event}', agreement)
+        return Response(self.get_serializer(agreement).data, headers={'Cache-Control': 'private, no-store'})
+
+    @action(detail=True, methods=['get'], url_path='code-history')
+    def code_history(self, request, pk=None):
+        if not request.user.has_perm('gestion.change_agreement'):
+            raise PermissionDenied()
+        agreement = self.get_object()
+        events = Audit.objects.filter(model='agreement', record_id=agreement.pk).filter(
+            Q(action__startswith='Código de convenio:') | Q(action='Registro creado mediante API')
+        ).order_by('-at', '-pk')
+        page = self.paginate_queryset(events)
+        return self.get_paginated_response(AuditSerializer(page, many=True).data)
+
     @action(detail=True, methods=['get'])
     def qr(self, request, pk=None):
         from io import BytesIO
@@ -352,7 +460,7 @@ class Agreements(Records):
 
         agreement = self.get_object()
         base = public_configuration(request)['url']
-        if not base or not agreement.code or not agreement.available or agreement.has_managed_union:
+        if not base or not agreement.code_available:
             raise ValidationError('Se requiere un convenio vigente con código y una dirección HTTPS configurada.')
         url = base.split('?', 1)[0] + '?' + urlencode({'origen': 'qr', 'convenio': agreement.code})
         if request.query_params.get('image') == 'png':
