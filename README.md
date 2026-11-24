@@ -220,3 +220,8 @@ Para la presentación local, usar `Abrir_Revision_Estable.cmd`. Para revisar dis
 ## Demostración académica en alwaysdata
 
 Ver [preparación de WSGI, MariaDB y HTTPS](deploy/alwaysdata/README.md). El perfil usa una base nueva y está destinado a datos ficticios.
+# Gestión comercial académica
+
+La ampliación de noviembre agrega beneficios administrables por convenio, transferencias ficticias con comprobantes privados y revisión manual, e inventario con variantes, marcas, modelos, categorías, proveedores, reservas y Kardex. Los accesos son `/app/beneficios.html`, `/app/mis_beneficios.html`, `/app/pagos.html` y `/app/inventario.html`. El registro sindical muestra errores recuperables y actualiza su listado después de guardar.
+
+Consulta [el proceso, las tablas, los permisos y la demostración](docs/COMERCIO_INVENTARIO.md). Los pagos permanecen en modo académico con datos bancarios inoperativos. La autorización de condiciones comerciales y operaciones reales corresponde a Ópticas Amaru.

@@ -107,3 +107,12 @@ git push -u origin main
 ```
 
 No se utilizó force push ni se reescribió historial compartido. Antes de repetir la publicación, comprobar que el remoto no recibió cambios del equipo. Las credenciales de GitHub no deben copiarse a `.env` ni incluirse en la URL del remoto.
+# Actualización comercial del 24 de noviembre de 2026
+
+Se incorporaron beneficios de convenio, transferencias académicas con comprobantes privados y revisión manual, e inventario con maestros, variantes, reservas y Kardex. La descripción anterior de 27 tablas corresponde a la implementación inicial. Después de las ampliaciones de cuentas, sindicatos y esta migración, la base local tiene 49 tablas. [Esquema y procedimiento comercial](COMERCIO_INVENTARIO.md).
+
+El registro sindical ahora devuelve el RUT inválido como error HTTP 400 y muestra el listado después del alta. Chrome comprobó la recuperación de un fallo de red simulado y la persistencia del trabajador, manteniendo su acceso pendiente de aceptación.
+
+La ejecución general aprobó 145 pruebas contra MariaDB. Después de incorporar la cancelación trazable, se aprobaron 30 pruebas focalizadas de comercio, permisos y filtros, incluidas dos adicionales de cancelación. La regresión comprueba las entregas de órdenes anteriores sin reservas. Los registros y capturas de ejecución permanecen en `.tools/backend-qa/commercial`, fuera de GitHub.
+
+Se conserva el modo académico, con datos bancarios inoperativos, beneficios ficticios y archivos de comprobante privados. Las condiciones comerciales y su uso real requieren aprobación de la empresa. Esta ampliación no verifica nuevamente R2 remoto en alwaysdata.

@@ -42,11 +42,22 @@ class PrescriptionSerializer(serializers.ModelSerializer):
 
 
 class ProductSerializer(serializers.ModelSerializer):
+    stock_category_name=serializers.CharField(source='stock_category.name',read_only=True,allow_null=True)
     image_url=serializers.SerializerMethodField()
     image=serializers.ImageField(write_only=True,required=False)
     class Meta:
         model=Product
-        fields=['id','sku','name','category','description','lens_type','variants','crystal','treatments','color','reference_price','requires_prescription','image','image_url','active','mining_only']
+        fields=['id','sku','name','category','description','lens_type','variants','crystal','treatments','color','reference_price','requires_prescription','image','image_url','active','mining_only','brand','model','stock_category','stock_category_name','material']
+    def validate(self, data):
+        model = data.get('model', getattr(self.instance,'model',None))
+        brand = data.get('brand', getattr(self.instance,'brand',None))
+        if model and model.brand_id != getattr(brand,'pk',None):
+            raise serializers.ValidationError({'model':'Selecciona un modelo de la marca indicada.'})
+        if self.instance and 'variants' in data:
+            used = self.instance.stock_variants.exclude(label='').values_list('label',flat=True)
+            if any(label not in data['variants'] for label in used):
+                raise serializers.ValidationError({'variants':'Conserva las variantes inventariables. Puedes desactivarlas desde Inventario.'})
+        return data
     def get_image_url(self,obj):
         view = self.context.get('view')
         prefix = 'catalog-management' if view and view.basename == 'catalog-management' else 'products'
@@ -96,14 +107,19 @@ class QuoteSerializer(serializers.ModelSerializer):
     client_rut = serializers.CharField(source='client.rut', read_only=True)
     agreement_name = serializers.CharField(source='agreement.name', read_only=True, allow_null=True)
     converted = serializers.BooleanField(read_only=True, default=False)
+    confirmed_at = serializers.DateTimeField(read_only=True)
+    benefit_snapshot = serializers.JSONField(read_only=True)
+    original_amount = serializers.DecimalField(max_digits=12,decimal_places=0,read_only=True)
     lines=serializers.SerializerMethodField()
     class Meta:
         model=Quote
-        fields=['id','folio','client','prescription','product_type','category','agreement','characteristics','amount','approved','notes','created_at','updated_at','lines','client_name','client_rut','agreement_name','converted']
+        fields=['id','folio','client','prescription','product_type','category','agreement','characteristics','amount','approved','notes','created_at','updated_at','lines','client_name','client_rut','agreement_name','converted','confirmed_at','benefit_snapshot','original_amount']
         read_only_fields=['created_at','updated_at']
     def get_lines(self,obj):
         return [{'product':l.product_id,'name':l.product_name or l.product.name,'variant':l.variant,'quantity':l.quantity,'unit_price':str(l.unit_price)} for l in obj.lines.all()]
     def validate(self,data):
+        if self.instance and self.instance.confirmed_at:
+            raise serializers.ValidationError('La cotización ya tiene un monto confirmado para pago. Conserva su historial.')
         if self.instance and Order.objects.filter(quote=self.instance).exists():
             raise serializers.ValidationError('La cotización ya tiene una OT; conserva su versión.')
         client=data.get('client',getattr(self.instance,'client',None))

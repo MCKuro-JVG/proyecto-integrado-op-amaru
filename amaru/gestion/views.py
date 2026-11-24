@@ -76,7 +76,14 @@ def create(request,module):
             obj=form.save(commit=False)
             if hasattr(obj,'actor'):obj.actor=request.user
             if model==Quote:obj.characteristics=form.characteristics()
+            initial_quantity=obj.quantity if model==Inventory else 0
+            if model==Inventory:obj.quantity=0
             obj.save()
+            if model==Inventory and initial_quantity:
+                import uuid
+                from .stock import move
+                move(obj.pk,request.user,kind='entry',quantity=initial_quantity,
+                     reason='Saldo inicial registrado desde formulario de inventario',operation=uuid.uuid4())
             if model==Client:record_consent(obj,request.user)
             audit(request.user,'Registro creado',obj)
         messages.success(request,'Registro guardado correctamente.')
@@ -107,7 +114,7 @@ def edit_client(request,pk):
 @allowed('gestion.change_quote')
 def edit_quote(request,pk):
     q=get_object_or_404(Quote,pk=pk)
-    if Order.objects.filter(quote=q).exists():raise PermissionDenied
+    if q.confirmed_at or Order.objects.filter(quote=q).exists():raise PermissionDenied
     form=ProductForm(request.POST or None,instance=q,initial=q.characteristics)
     if request.method=='POST' and form.is_valid():
         q=form.save(commit=False);q.characteristics=form.characteristics();q.save();audit(request.user,'Cotización actualizada',q)
@@ -142,12 +149,12 @@ def state(request,module,pk):
     if not model or not request.user.has_perm(f'gestion.change_{model._meta.model_name}'):raise PermissionDenied
     obj=get_object_or_404(model,pk=pk)
     choices=model.STATES
-    if model==Order:choices=[x for x in choices if x[0]!='Entregada']
+    if model==Order:choices=[x for x in choices if x[0] not in ('Entregada','Cancelada')]
     form=StateForm(request.POST or None,choices=choices,initial={'status':obj.status})
     if request.method=='POST' and form.is_valid():
         with transaction.atomic():
             obj=model.objects.select_for_update().get(pk=pk);before=obj.status
-            if model==Order and obj.status=='Entregada':form.add_error('status','Una OT entregada conserva su estado de recepción.')
+            if model==Order and obj.status in ('Entregada','Cancelada'):form.add_error('status','Una OT entregada conserva su estado de recepción.')
             else:
                 obj.status=form.cleaned_data['status']
                 if model==Warranty:obj.justification=form.cleaned_data['justification']

@@ -30,8 +30,11 @@ function close(){clearInterval(qrRefresh);qrRefresh=null;document.getElementById
 async function api(path,options={}){
  const headers={'Accept':'application/json','X-CSRFToken':csrf,...options.headers};
  if(options.body&&!(options.body instanceof FormData)){headers['Content-Type']='application/json';options.body=JSON.stringify(options.body);}
- const r=await fetch('/api/'+path,{...options,headers,credentials:'same-origin'});
- const body=r.headers.get('content-type')?.includes('json')?await r.json():null;
+ let r,body;
+ const controller=new AbortController();const deadline=setTimeout(()=>controller.abort(),25000);
+ try{r=await fetch('/api/'+path,{...options,headers,credentials:'same-origin',signal:controller.signal});body=r.headers.get('content-type')?.includes('json')?await r.json():null;}
+ catch(err){throw new Error(err.name==='AbortError'?'El servidor tarda en responder. Revisa el listado antes de repetir el registro.':'No pudimos conectar con el servidor. Conservamos tus datos para reintentar.');}
+ finally{clearTimeout(deadline);}
  if(!r.ok){const failure=new Error(body?Object.entries(body).map(([k,v])=>(k==='detail'?'':k+': ')+(Array.isArray(v)?v.join(' '):typeof v==='object'?JSON.stringify(v):v)).join(' '):'El servidor no pudo completar la operación ('+r.status+').');failure.status=r.status;throw failure;}
  return body;
 }
@@ -39,6 +42,8 @@ async function list(path){return api(path+(path.includes('?')?'&':'?')+'page='+(
 function paginationURL(number){const query=new URLSearchParams(params);query.set('pagina',number);return location.pathname+'?'+query;}
 function pages(result){return `<p>${esc(result.count)} registros · Página ${esc(params.get('pagina')||1)}</p><div class="actions">${result.previous?link('← Anterior',paginationURL(Number(params.get('pagina')||1)-1)):''}${result.next?link('Siguiente →',paginationURL(Number(params.get('pagina')||1)+1)):''}</div>`;}
 
+const commercial=window.AmaruCommercial({api,esc,head,panel,input,select,area,check,form,table,btn,link,note,currency,date,dialog,close,message,has,screen,params,pages,list,get session(){return session;}});
+document.addEventListener('invalid',event=>{const f=event.target.form;if(!f?.dataset.form)return;const feedback=f.querySelector('.form-feedback');if(feedback)feedback.textContent='Revisa el campo '+(f.querySelector('label[for="'+event.target.id+'"]')?.textContent||event.target.name)+'.';},true);
 const registrationLink='<p class="signup-link"><a href="/app/registro.html">¿No tienes una cuenta? Regístrate aquí.</a></p>';
 async function renderRegistration(){
  if(session.authenticated){screen.innerHTML=head('Tu sesión está activa')+link('Ir a mis pedidos','consulta.html');return;}
@@ -132,7 +137,7 @@ async function renderUnion(){
  const u=data.union;
  const selected=unionMenu.find(([key])=>key===params.get('vista'))?.[0]||'resumen';
  const nav=unionMenu.map(([key,label])=>`<a class="button soft" ${key===selected?'aria-current="page"':''} href="sindicato.html?vista=${key}">${label}</a>`).join('');
- screen.innerHTML=head('Panel del Sindicato',u.name)+`<nav class="actions union-nav" aria-label="Panel del Sindicato">${nav}</nav>`;
+ screen.innerHTML=head('Panel del Sindicato',u.name)+link('Beneficios institucionales','mis_beneficios.html')+`<nav class="actions union-nav" aria-label="Panel del Sindicato">${nav}</nav>`;
  let content;
  if(selected==='convenio'){
   content=panel('Mi convenio',`<p>${esc(u.identifier)} · ${esc(unionStates[u.state])}</p>
@@ -143,9 +148,9 @@ async function renderUnion(){
    form('union-sign',hidden('document',doc.id)+hidden('sha256',doc.sha256)+check('accepted',esc(data.acceptance)),'Firmar convenio'):''));
  }else if(selected==='trabajadores'||selected==='accesos'){
   content=panel(selected==='accesos'?'Administrar accesos':'Mis trabajadores',
-   table(['Trabajador','RUT','Contacto','Calidad','Estado','Acciones'],data.workers.map(r=>[
+   table(['Trabajador','RUT','Contacto','Calidad','Fecha','Validación / cuenta','Acciones'],data.workers.map(r=>[
     esc(r.name),esc(r.rut),esc(r.email)+'<br>'+esc(r.phone),esc(r.role),
-    badge(unionStates[r.state])+(r.recovery_requested_at?'<p>Recuperación solicitada</p>':''),
+    esc(date(r.created_at)),badge(unionStates[r.state])+'<p>'+esc(r.account_state)+'</p>'+(r.recovery_requested_at?'<p>Recuperación solicitada</p>':''),
     `<div class="actions union-nav">${workerActions(r,u.available)}</div>`])));
  }else if(selected==='crear'){
   content=panel('Crear trabajador',u.available?note('Sindicato asignado: '+u.name)+
@@ -202,11 +207,12 @@ function showPickupValidation(){
  '','Buscar orden'));
 }
 
+function actionButtons(){return '<div class="actions">'+link('Mis pagos y comprobantes','pagos.html')+link('Mis beneficios','mis_beneficios.html')+'</div>';}
 async function render(){
  try{
  const publicPages=['index','catalogo','formulario_remoto','producto','carrito','portal_convenios','registro','privacidad','invitacion'];
  if(!publicPages.includes(page)&&!session.authenticated){loginForm();return;}
- if(!publicPages.includes(page)&&!['consulta','recepcion','documentos','representante','sindicato','sindicatos','retiro'].includes(page)&&!session.permissions.some(p=>p.startsWith('gestion.view_'))){screen.innerHTML=head('Acceso restringido')+link('Ir a mis pedidos','consulta.html');return;}
+ if(!publicPages.includes(page)&&!['consulta','recepcion','documentos','representante','sindicato','sindicatos','retiro','pagos','mis_beneficios'].includes(page)&&!session.permissions.some(p=>p.startsWith('gestion.view_'))){screen.innerHTML=head('Acceso restringido')+link('Ir a mis pedidos','consulta.html');return;}
  if(page==='index'){screen.innerHTML=`<section class="hero"><div><h1>Ópticas Amaru</h1><h2>Tu atención, conectada.</h2><p>Desde la primera consulta hasta el retiro de tus lentes.</p><div class="actions">${link('Solicitar atención','formulario_remoto.html')}${link('Productos y servicios','catalogo.html')}${link('Mis pedidos','consulta.html')}</div></div><div class="brand-feature"><img class="institutional-logo" src="/static/interfaz/img/logo-amaru-oficial.png" width="280" height="144" alt="Óptica Amaru · Tu Visión, Tu Imagen"></div></section>`+note('Catálogo académico y horarios de referencia. Las solicitudes quedan registradas para revisión, sin envío automático de correos.');}
  else if(page==='registro')await renderRegistration();
  else if(page==='privacidad')renderPrivacy();
@@ -220,9 +226,13 @@ async function render(){
  else if(page==='invitacion')renderInvitation();
  else if(page==='retiro')showPickupValidation();
  else if(page==='convenios')await renderAgreements();
+ else if(page==='beneficios')await commercial.benefitsPage();
+ else if(page==='mis_beneficios')await commercial.benefitsPage(true);
+ else if(page==='pagos')await commercial.paymentsPage();
+ else if(page==='inventario')await commercial.inventoryPage();
  else if(page==='formulario_remoto')await requestForm();
  else if(page==='consulta'){
- const data=await list('orders/');screen.innerHTML=head('Mis pedidos','El servidor limita los registros a tu cuenta autenticada.')+ordersTable(data.results,true)+pages(data);
+ const data=await list('orders/');screen.innerHTML=head('Mis pedidos','El servidor limita los registros a tu cuenta autenticada.')+actionButtons()+ordersTable(data.results,true)+pages(data);
  if(session.client_id&&!has('view_order')){
   try{screen.insertAdjacentHTML('beforeend',await renderMyAccount());}
   catch(e){screen.insertAdjacentHTML('beforeend',note(e.message));}
@@ -245,15 +255,15 @@ const categories=[['seguridad','Armazones de seguridad'],['armazon','Armazones p
 async function renderCatalog(){
  const manage=params.get('gestion')==='1'&&has('view_product');
  const mining=params.get('scope')==='mining'&&!manage;
- const query=new URLSearchParams([...params].filter(([key])=>['q','category','scope'].includes(key)));
- const data=await list((manage?'catalog-management/':'products/')+'?'+query);
+ const query=new URLSearchParams([...params].filter(([key])=>['q','category','scope','stock_category'].includes(key)));
+ const [data,stockCategories]=await Promise.all([list((manage?'catalog-management/':'products/')+'?'+query),api('stock-categories/')]);
  const filters=form('catalog-filter',input('q','Buscar por nombre o código','search',params.get('q')||'','')+
-   select('category','Categoría',[['','Todas'],...categories],params.get('category')||''),'Buscar');
+   select('category','Tipo de producto',[['','Todos'],...categories],params.get('category')||'')+select('stock_category','Categoría del catálogo',[['','Todas'],...stockCategories.results.map(c=>[c.id,c.name])],params.get('stock_category')||''),'Buscar');
  const navigation=manage?link('Vista pública','catalogo.html'):has('view_product')?link('Administrar catálogo','catalogo.html?gestion=1'):'';
  const create=manage&&has('add_product')?btn('Nuevo producto','product-new'):'';
  const cards=data.results.map(p=>panel(p.name,
   `<img src="${esc(p.active&&p.image_url?p.image_url:'/static/interfaz/img/atencion_optica.svg')}" alt="${esc(p.name)}" style="width:100%;max-height:220px;object-fit:contain">
-  <p>${esc(p.description)}</p><dl><dt>Categoría</dt><dd>${esc(categories.find(([value])=>value===p.category)?.[1]||p.category)}</dd>
+  <p>${esc(p.description)}</p><dl><dt>Categoría</dt><dd>${esc(p.stock_category_name||categories.find(([value])=>value===p.category)?.[1]||p.category)}</dd>
   <dt>Tipo, cristal y color</dt><dd>${esc([p.lens_type,p.crystal,p.color].filter(Boolean).join(' · ')||'Por definir')}</dd>
   <dt>Tratamientos</dt><dd>${esc(p.treatments||'Por definir')}</dd></dl>
   ${p.reference_price!==null?`<p>Referencia académica: ${currency(p.reference_price)}</p>`:''}
@@ -278,12 +288,16 @@ async function productRequestForm(id){
  document.querySelector('[data-form="request-product"]').dataset.key=crypto.randomUUID();
 }
 async function productForm(id){
- const p=id?await api('catalog-management/'+id+'/'):{};
+ const [p,brands,models,dynamicCategories]=await Promise.all([id?api('catalog-management/'+id+'/'):Promise.resolve({}),api('brands/'),api('product-models/'),api('stock-categories/')]);
  dialog(id?'Editar producto':'Nuevo producto',form('product',
   `<input type="hidden" name="id" value="${esc(id||'')}">`+input('sku','Código SKU','text',p.sku)+
   input('name','Nombre','text',p.name)+select('category','Categoría',categories,p.category)+area('description','Descripción',p.description)+
   input('variants','Variantes separadas por coma','text',(p.variants||[]).join(', '),'maxlength="1600"')+input('lens_type','Tipo de lente','text',p.lens_type,'')+input('crystal','Cristal','text',p.crystal,'')+
   input('treatments','Tratamientos','text',p.treatments,'')+input('color','Color','text',p.color,'')+
+  select('brand','Marca',[['','Sin marca'],...brands.results.map(b=>[b.id,b.name])],p.brand)+
+  select('model','Modelo',[['','Sin modelo'],...models.results.filter(m=>!p.brand||m.brand===p.brand).map(m=>[m.id,m.name])],p.model)+
+  select('stock_category','Categoría de inventario',[['','Sin categoría'],...dynamicCategories.results.map(c=>[c.id,c.name])],p.stock_category)+
+  input('material','Material','text',p.material,'maxlength="120"')+
   input('reference_price','Precio ficticio CLP','number',p.reference_price??'','min="0" step="1"')+
   input('image','Imagen JPG o PNG','file','','accept="image/jpeg,image/png"')+
   select('active','Visibilidad',[['true','Activo'],['false','Desactivado']],String(p.active??true))+
@@ -320,6 +334,7 @@ async function renderAgreements(){
  const rows=result.results.map(a=>{
   let actions=has('view_inquiry')?link('Consultar trabajadores','solicitudes.html?verification=all&agreement='+a.id):'';
   if(a.code_available)actions+=btn('Mostrar QR','agreement-qr',a.id);
+   if(has('view_agreementbenefit'))actions+=link('Beneficios','beneficios.html?agreement='+a.id);
   if(management){
    actions+=btn('Editar convenio','agreement-edit',a.id)+btn(a.code?'Administrar código':'Generar código','agreement-code',a.id);
    if(a.code_available&&a.code)actions+=btn('Copiar código','qr-copy',a.code);
@@ -439,6 +454,9 @@ async function renderCart(){
   '<details><summary>Adjuntar receta privada</summary>'+form('cart-recipe',input('issued_on','Fecha de emisión','date')+input('file','JPG, PNG o PDF','file','','required accept=".jpg,.jpeg,.png,.pdf"'),'Guardar receta')+'</details>'+
   link('Agendar evaluación','formulario_remoto.html'));
  const checkout=screen.querySelector('[data-form=checkout]');checkout.dataset.key=crypto.randomUUID();
+ try{const pricing=await api('checkout-preview/',{method:'POST',body:{items:readCart(),mode:'cotizacion',reason:'Vista previa del carrito',contact_authorized:true,idempotency_key:checkout.dataset.key}});
+ if(!pricing.pending)checkout.insertAdjacentHTML('beforebegin',panel('Precio de referencia y beneficios',note('Precio original: '+currency(pricing.original)+' · '+(pricing.benefit.name?'Beneficio '+pricing.benefit.name+' · Descuento '+currency(pricing.benefit.discount):'Sin descuento')+' · Precio final de referencia: '+currency(pricing.amount)+' · Sujeto a confirmación del personal.')));
+ }catch(error){checkout.insertAdjacentHTML('beforebegin',note(error.message));}
  checkout.elements.prescription.required=needsRecipe;
  checkout.elements.contact_authorized.required=true;
 }
@@ -485,6 +503,7 @@ async function requestForm(){
   for(const name of ['day','slot'])f.elements[name].disabled=!appointment;
   document.getElementById('registration-rut').hidden=kind!=='registro';
   f.elements.registration_rut.required=kind==='registro';
+  for(const key of ['registration_rut','agreement_code','agreement_role'])f.elements[key].disabled=kind!=='registro';
   document.getElementById('agreement-fields').hidden=kind!=='registro';
   f.elements.agreement_role.required=kind==='registro'&&!!f.elements.agreement_code.value.trim();
  };
@@ -613,7 +632,7 @@ async function showAttentionQR(){
 }
 function printAttentionQR(){const img=document.getElementById('attention-qr');if(!img)return;const win=window.open('about:blank','_blank');if(!win)throw new Error('Permite abrir la ventana de impresión.');win.document.write('<!doctype html><title>QR — Ópticas Amaru</title><style>body{font:20px sans-serif;text-align:center}img{width:440px;max-width:90%}p{overflow-wrap:anywhere}</style><h1>Formulario de atención — Ópticas Amaru</h1><p>Escanea para dejar tu solicitud</p><img alt="QR" src="'+img.src+'"><p>'+esc(document.querySelector('.qr-url').textContent)+'</p>');win.document.close();win.onload=()=>win.print();}
 
-function ordersTable(rows,own=false){return table(['Orden','Cliente','Producto','Estado','Acción'],rows.map(o=>[esc(o.folio),esc(o.client_name),esc(Object.values(o.characteristics).join(' · ')),badge(o.status),`<div class="actions">${o.status==='Disponible para retiro'?(own?btn('Ver código de retiro','pickup-owner',o.id):link('Revisar retiro','recepcion.html?pedido='+o.id)):''}${!own&&o.status!=='Entregada'&&has('change_order')?btn('Actualizar','order-state',o.id):''}${o.status==='Entregada'?link('Documentos','documentos.html'):''}</div>`]));}
+function ordersTable(rows,own=false){return table(['Orden','Cliente','Producto','Estado','Acción'],rows.map(o=>[esc(o.folio),esc(o.client_name),esc(Object.values(o.characteristics).join(' · ')),badge(o.status),`<div class="actions">${o.status==='Disponible para retiro'?(own?btn('Ver código de retiro','pickup-owner',o.id):link('Revisar retiro','recepcion.html?pedido='+o.id)):''}${!own&&!['Entregada','Cancelada'].includes(o.status)&&has('change_order')?btn('Actualizar','order-state',o.id)+btn('Cancelar orden','commerce-cancel-order',o.id):''}${o.status==='Entregada'?link('Documentos','documentos.html'):''}</div>`]));}
 async function modulePage(){
  if(page==='cotizaciones'){await renderQuotes();return;}
  const endpoint=endpoints[page],q=page==='clientes'&&params.get('q')?'?q='+encodeURIComponent(params.get('q')):page==='solicitudes'?'?'+new URLSearchParams([...params].filter(([k])=>['status','day','verification','agreement'].includes(k))):'';
@@ -684,8 +703,10 @@ async function renderQuotes(){
  const rows=data.results.map(q=>[esc(q.folio),...(grouped?[]:[esc(q.client_name)+'<br>'+esc(q.client_rut)]),
   esc(quoteDate(q.created_at)),currency(q.amount),statusTag(quoteState(q),q.converted||q.approved?'active':'pending'),esc(q.agreement_name||'—'),
   '<div class="actions">'+btn('Ver detalle','quote-detail',q.id)+
-  (!q.converted&&has('change_quote')?btn('Editar / aprobar','quote-edit',q.id):'')+
-  (!q.converted&&q.approved&&has('add_order')?btn('Generar OT','convert',q.id):'')+'</div>']);
+  (!q.converted&&!q.confirmed_at&&has('change_quote')?btn('Editar / aprobar','quote-edit',q.id):'')+
+  (!q.converted&&q.approved&&!q.confirmed_at&&has('add_transferpayment')?btn('Confirmar monto y pago','commerce-confirm-payment',q.id):'')+
+  (q.confirmed_at?link('Consultar pago','pagos.html?folio='+encodeURIComponent(q.folio)):'')+
+  (!q.converted&&!q.confirmed_at&&q.approved&&has('add_order')?btn('Generar OT','convert',q.id):'')+'</div>']);
  const title=grouped?'Cliente: '+esc(first.client_name)+' · '+esc(first.client_rut):'Resultados';
  screen.insertAdjacentHTML('beforeend',panel(title,rows.length?table(headers,rows)+pages(data):note('No se encontraron cotizaciones para esta búsqueda.')));
 }
@@ -726,6 +747,7 @@ function setupSignature(){signature='';const canvas=document.getElementById('sig
 async function openFile(path){const win=window.open('about:blank','_blank');try{const r=await fetch('/api/'+path,{credentials:'same-origin'});if(!r.ok)throw new Error('No se pudo acceder al documento autorizado.');if(r.headers.get('content-type')?.includes('json')){const data=await r.json();if(win)win.location=data.url;else location.href=data.url;}else{const url=URL.createObjectURL(await r.blob());if(win)win.location=url;else location.href=url;setTimeout(()=>URL.revokeObjectURL(url),60000);}}catch(e){win?.close();throw e;}}
 document.addEventListener('change',async e=>{
  const field=e.target;
+ if(field.matches('[data-form=product] [name=brand]')){const models=await api('product-models/?brand='+encodeURIComponent(field.value));const select=field.form.elements.model;select.innerHTML='<option value="">Sin modelo</option>'+models.results.map(m=>'<option value="'+m.id+'">'+esc(m.name)+'</option>').join('');return;}
  if(!field.matches('[data-cart-index]'))return;
  const items=readCart(),line=items[Number(field.dataset.cartIndex)];
  if(!line)return;
@@ -735,13 +757,16 @@ document.addEventListener('change',async e=>{
 });
 document.addEventListener('submit',async e=>{
  const f=e.target;if(!f.dataset.form)return;e.preventDefault();if(!f.reportValidity())return;
+ if(f.dataset.form.startsWith('commerce-')){await commercial.submit(e);return;}
+ if(f.dataset.busy==='1')return;
  const data=Object.fromEntries(new FormData(f)),submit=f.querySelector('[type=submit]');
  if(f.dataset.form==='inquiry'&&data.kind==='agenda'&&(!data.day||!data.slot)){
   f.querySelector('[data-calendar-feedback]').textContent='Selecciona un día y un horario disponible.';
   f.querySelector('#appointment-title').scrollIntoView({block:'nearest'});
   return;
  }
- submit.disabled=true;
+ submit.disabled=true;f.dataset.busy='1';f.setAttribute('aria-busy','true');
+ const progress=f.querySelector('.form-feedback');progress.textContent=f.dataset.form==='union-worker'?'Validando y registrando trabajador…':'Validando y guardando información…';
  try{switch(f.dataset.form){
  case 'membership-start':location.href='formulario_remoto.html?registro_convenio=1&convenio='+encodeURIComponent(data.code.trim());return;
  case 'membership-status':{const result=await api('membership/status/',{method:'POST',body:data});f.querySelector('.form-feedback').textContent='Estado: '+result.state;return;}
@@ -783,7 +808,7 @@ document.addEventListener('submit',async e=>{
  }
  case 'union-sign':await api('union/sign/',{method:'POST',body:{...data,accepted:!!data.accepted}});break;
  case 'union-worker':{
-  const result=await api('union/workers/',{method:'POST',body:data});await renderUnion();invitationDialog(result.invitation);return;
+  const result=await api('union/workers/',{method:'POST',body:data});params.set('vista','trabajadores');history.replaceState(null,'','sindicato.html?'+params);await renderUnion();invitationDialog(result.invitation);message('Trabajador registrado. Su invitación queda pendiente de aceptación.');return;
  }
  case 'worker-manage':{
   if(data.action==='edit'){if(!data.name)delete data.name;if(!data.phone)delete data.phone;}
@@ -808,7 +833,7 @@ document.addEventListener('submit',async e=>{
  case 'catalog-filter':{const query=new URLSearchParams(data);if(params.get('scope')==='mining')query.set('scope','mining');if(params.get('gestion')==='1')query.set('gestion','1');location.href='catalogo.html?'+query;return;}
  case 'own-prescription':{const payload=new FormData(f);payload.delete('product');await api('my-prescriptions/',{method:'POST',body:payload});close();await productRequestForm(data.product);message('Receta guardada. Selecciona una vigente.');return;}
  case 'request-product':{if(!data.prescription)delete data.prescription;data.contact_authorized=!!data.contact_authorized;data.idempotency_key=f.dataset.key;const result=await api('product-requests/',{method:'POST',body:data});close();dialog('Solicitud registrada',note('Queda pendiente de revisión por el personal.')+`<p>Referencia: ${esc(result.reference)}</p>`);return;}
- case 'product':{const payload=new FormData(f),id=data.id;payload.delete('id');payload.set('variants',JSON.stringify(data.variants.split(',').map(v=>v.trim()).filter(Boolean)));if(!payload.get('image').size)payload.delete('image');await api('catalog-management/'+(id?id+'/':''),{method:id?'PATCH':'POST',body:payload});break;}
+ case 'product':{const payload=new FormData(f),id=data.id;payload.delete('id');for(const field of ['brand','model','stock_category'])if(!payload.get(field))payload.set(field,'');payload.set('variants',JSON.stringify(data.variants.split(',').map(v=>v.trim()).filter(Boolean)));if(!payload.get('image').size)payload.delete('image');await api('catalog-management/'+(id?id+'/':''),{method:id?'PATCH':'POST',body:payload});break;}
  case 'inquiry-filter':{const filter=new URLSearchParams(data);for(const key of ['verification','agreement'])if(params.get(key))filter.set(key,params.get(key));location.href='solicitudes.html?'+filter;return;}
  case 'agreement':{const id=data.id;delete data.id;for(const field of ['starts_on','ends_on'])data[field]=data[field]||null;await api('agreements/'+(id?id+'/':''),{method:id?'PATCH':'POST',body:data});break;}
  case 'quote-search':{const filter=new URLSearchParams();for(const [key,value] of Object.entries(data))if(value.trim())filter.set(key,value.trim());location.href='cotizaciones.html?'+filter;return;}
@@ -834,9 +859,9 @@ document.addEventListener('submit',async e=>{
    try{f.elements.challenge.value=(await api('register/')).challenge;}catch{/* Conserva la explicación del error original. */}
   }
   f.querySelector('.form-feedback').textContent=err.message;
- }finally{submit.disabled=false;}
+ }finally{submit.disabled=false;delete f.dataset.busy;f.removeAttribute('aria-busy');}
 });
-document.addEventListener('click',async e=>{const b=e.target.closest('[data-op]');if(!b)return;const id=b.dataset.id;try{switch(b.dataset.op){
+document.addEventListener('click',async e=>{const b=e.target.closest('[data-op]');if(!b)return;const id=b.dataset.id;try{if(b.dataset.op.startsWith('commerce-')){await commercial.click(b);return;}switch(b.dataset.op){
  case 'cart-remove':{const items=readCart();items.splice(Number(id),1);saveCart(items);await renderCart();break;}
  case 'purchase-detail':await purchaseDetail(id);break;
  case 'representative-review':dialog('Validar pertenencia',form('representative-review',`<input name="id" type="hidden" value="${esc(id)}">`+select('approved','Decisión',[['true','Confirmar pertenencia'],['false','Rechazar']])+input('note','Referencia interna de la verificación')+check('confirmed','Confirmo el rechazo si elegí Rechazar.')));break;
@@ -1005,6 +1030,10 @@ if(staffToggle){
  const staffNav=document.querySelector('.sidebar nav');
  if(staffNav){
   const items=[
+   [has('view_transferpayment'),'Pagos y comprobantes','pagos.html'],
+   [has('view_agreementbenefit'),'Beneficios','beneficios.html'],
+   [session.client_id||session.union,'Mis beneficios','mis_beneficios.html'],
+   [session.client_id&&!has('view_transferpayment'),'Mis pagos','pagos.html'],
    [has('view_agreement'),'Convenios','convenios.html'],
    [has('change_union'),'Sindicatos','sindicatos.html'],
    [session.django_admin,'Administración del sistema','/admin/'],
@@ -1019,7 +1048,7 @@ if(staffToggle){
    if(route===page+'.html'){a.classList.add('active');a.setAttribute('aria-current','page');}
    staffNav.append(a);
   }
-  if(['convenios','sindicatos'].includes(page)){
+  if(['convenios','sindicatos','beneficios','pagos','mis_beneficios'].includes(page)){
    for(const a of staffNav.querySelectorAll('[aria-current="page"]')){
     if(a.getAttribute('href')!==page+'.html'){a.removeAttribute('aria-current');a.classList.remove('active');}
    }

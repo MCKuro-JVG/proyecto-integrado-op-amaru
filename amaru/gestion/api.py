@@ -117,6 +117,11 @@ def catalog_query(products, request):
         products = products.filter(Q(name__icontains=search) | Q(sku__icontains=search))
     if category:
         products = products.filter(category=category)
+    stock_category = request.query_params.get('stock_category')
+    if stock_category:
+        if not stock_category.isdecimal():
+            raise ValidationError('La categoría no es válida.')
+        products = products.filter(stock_category_id=stock_category)
     ids = request.query_params.get('ids')
     if ids is not None:
         identifiers = ids.split(',')
@@ -255,7 +260,7 @@ class Orders(viewsets.ReadOnlyModelViewSet):
         with transaction.atomic():
             obj=Order.objects.select_for_update().get(pk=self.get_object().pk)
             value=request.data.get('status')
-            if obj.status=='Entregada' or not isinstance(value,str) or value not in dict(Order.STATES) or value=='Entregada':
+            if obj.status in ('Entregada','Cancelada') or not isinstance(value,str) or value not in dict(Order.STATES) or value in ('Entregada','Cancelada'):
                 raise ValidationError('Estado inválido. La entrega se registra desde el documento.')
             before=obj.status;obj.status=value;obj.save()
             from .pickup import sync_order_state
@@ -406,6 +411,19 @@ class Audits(viewsets.ReadOnlyModelViewSet):
 class Inventories(Records):
     queryset=Inventory.objects.all()
     serializer_class=InventorySerializer
+
+    @transaction.atomic
+    def perform_update(self, serializer):
+        from .stock import move
+        obj=Inventory.objects.select_for_update().get(pk=serializer.instance.pk)
+        values=dict(serializer.validated_data)
+        quantity=values.pop('quantity',obj.quantity)
+        if quantity != obj.quantity:
+            import uuid
+            move(obj.pk,self.request.user,kind='adjustment',quantity=quantity,reason='Ajuste desde inventario anterior',operation=uuid.uuid4())
+        serializer.instance=obj
+        serializer.validated_data.pop('quantity',None)
+        serializer.save()
 
 
 class Agreements(Records):

@@ -276,7 +276,7 @@ def portal(request):
     union = representative_union(request.user)
     if union is None:
         raise PermissionDenied()
-    rows = union.memberships.all()
+    rows = union.memberships.select_related('union__agreement', 'client__user')
     counts = {state: rows.filter(state=state).count() for state in UnionMembership.State.values}
     return private({'union': summary(union), 'counts': counts, 'acceptance': ACCEPTANCE,
                     'workers': [worker_summary(row) for row in rows.order_by('-pk')[:200]]})
@@ -314,7 +314,9 @@ def sign_document(request):
 def worker_summary(row):
     return {'id': row.pk, 'name': row.name, 'rut': row.rut, 'email': row.email,
             'phone': row.phone, 'role': row.role, 'state': row.state, 'accepted_at': row.accepted_at,
-            'recovery_requested_at': row.recovery_requested_at}
+            'recovery_requested_at': row.recovery_requested_at, 'created_at': row.created_at,
+            'organization': row.union.agreement.name,
+            'account_state': 'Activa' if row.client_id and row.client.user_id and row.client.user.is_active else 'Pendiente de activación'}
 
 
 class WorkerInput(serializers.Serializer):
@@ -325,7 +327,10 @@ class WorkerInput(serializers.Serializer):
     role = serializers.ChoiceField(choices=['titular', 'carga'])
 
     def validate_rut(self, value):
-        return normalize_rut(normalize_rut(value))
+        try:
+            return normalize_rut(value)
+        except DjangoValidationError as error:
+            raise serializers.ValidationError(error.messages) from None
 
     def validate_phone(self, value):
         from .registration import RegistrationInput
@@ -572,7 +577,7 @@ def admin_workers(request, pk):
     admin_only(request.user)
     union = get_object_or_404(Union.objects.select_related('agreement'), pk=pk)
     return private({'union': summary(union),
-                    'workers': [worker_summary(row) for row in union.memberships.order_by('-pk')[:200]]})
+                    'workers': [worker_summary(row) for row in union.memberships.select_related('union__agreement','client__user').order_by('-pk')[:200]]})
 
 
 @api_view(['GET'])
@@ -580,5 +585,5 @@ def review_queue(request):
     admin_only(request.user)
     rows = UnionMembership.objects.filter(
         Q(state=UnionMembership.State.PENDING, accepted_at__isnull=False) | Q(recovery_requested_at__isnull=False)
-    ).select_related('union__agreement').order_by('-changed_at')[:200]
+    ).select_related('union__agreement','client__user').order_by('-changed_at')[:200]
     return private([{**worker_summary(row), 'organization': row.union.agreement.name} for row in rows])

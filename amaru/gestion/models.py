@@ -124,6 +124,10 @@ class Inventory(models.Model):
     category=models.CharField('categoría',max_length=20,choices=CATEGORY)
     quantity=models.PositiveIntegerField('stock disponible',default=0)
     notes=models.TextField('observaciones',blank=True)
+    variant=models.OneToOneField('ProductVariant',on_delete=models.PROTECT,null=True,blank=True,related_name='stock')
+    minimum=models.PositiveIntegerField(default=0)
+    location=models.CharField(max_length=120,blank=True)
+    unit_cost=models.DecimalField(max_digits=12,decimal_places=0,null=True,blank=True)
     def __str__(self): return f'{self.name} · stock {self.quantity}'
 class ProductBase(models.Model):
     TYPES=[('seguridad','Lente de seguridad'),('particular','Lente particular')]
@@ -158,17 +162,21 @@ class Quote(ProductBase):
     amount=models.DecimalField('total CLP',max_digits=12,decimal_places=0)
     approved=models.BooleanField('Cotización aprobada por el cliente',default=False)
     request=models.OneToOneField(Request,on_delete=models.PROTECT,null=True,blank=True)
+    original_amount=models.DecimalField(max_digits=12,decimal_places=0,null=True,blank=True)
+    benefit_snapshot=models.JSONField(default=dict,blank=True)
+    confirmed_at=models.DateTimeField(null=True,blank=True)
+    confirmed_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,null=True,blank=True,related_name='+')
     class Meta:
         constraints=[models.CheckConstraint(condition=models.Q(amount__gte=0),name='quote_amount_nonnegative')]
 class Order(ProductBase):
     PREFIX='OT'
-    STATES=[(s,s) for s in ['Registrada','En fabricación','Control de calidad','Disponible para retiro','Entregada']]
+    STATES=[(s,s) for s in ['Registrada','En fabricación','Control de calidad','Disponible para retiro','Entregada','Cancelada']]
     quote=models.OneToOneField(Quote,on_delete=models.PROTECT)
     status=models.CharField('estado',max_length=50,choices=STATES,default='Registrada')
     inventory=models.ForeignKey(Inventory,on_delete=models.PROTECT,null=True,blank=True)
     class Meta:
         indexes=[models.Index(fields=['status','created_at'],name='order_status_date')]
-        constraints=[models.CheckConstraint(condition=models.Q(status__in=['Registrada','En fabricación','Control de calidad','Disponible para retiro','Entregada']),name='order_valid_state')]
+        constraints=[models.CheckConstraint(condition=models.Q(status__in=['Registrada','En fabricación','Control de calidad','Disponible para retiro','Entregada','Cancelada']),name='order_valid_state')]
 class Warranty(models.Model):
     TYPES=[(s,s) for s in ['Garantía','Reparación','Cambio de armazón']]
     STATES=[(s,s) for s in ['En revisión taller','Aprobada','Rechazada','Lista para entrega']]
@@ -264,6 +272,10 @@ def mining_image_path(instance, filename):
 class Product(models.Model):
     """Catálogo público. Las características clínicas siguen en cada cotización/OT."""
     sku=models.CharField(max_length=60,unique=True)
+    brand=models.ForeignKey('Brand',on_delete=models.PROTECT,null=True,blank=True)
+    model=models.ForeignKey('ProductModel',on_delete=models.PROTECT,null=True,blank=True)
+    stock_category=models.ForeignKey('StockCategory',on_delete=models.PROTECT,null=True,blank=True)
+    material=models.CharField(max_length=120,blank=True)
     name=models.CharField(max_length=180)
     category=models.CharField(max_length=20,choices=Inventory.CATEGORY)
     description=models.TextField(blank=True)
@@ -472,3 +484,173 @@ class PickupCode(models.Model):
     used_at = models.DateTimeField(null=True)
     used_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name='+')
     revoked_at = models.DateTimeField(null=True)
+
+
+class Brand(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+    active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.name
+
+
+class ProductModel(models.Model):
+    brand = models.ForeignKey(Brand, on_delete=models.PROTECT)
+    name = models.CharField(max_length=120)
+    active = models.BooleanField(default=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['brand', 'name'], name='brand_model_unique')]
+
+    def __str__(self):
+        return f'{self.brand} · {self.name}'
+
+
+class StockCategory(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+    active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.name
+
+
+class Supplier(models.Model):
+    name = models.CharField(max_length=180, unique=True)
+    rut = models.CharField(max_length=12, blank=True, validators=[validate_rut])
+    phone = models.CharField(max_length=30, blank=True)
+    email = models.EmailField(blank=True)
+    address = models.CharField(max_length=240, blank=True)
+    contact = models.CharField(max_length=180, blank=True)
+    notes = models.TextField(max_length=2000, blank=True)
+    active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.name
+
+
+class ProductVariant(models.Model):
+    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='stock_variants')
+    label = models.CharField(max_length=80, blank=True)
+    sku = models.CharField(max_length=60, unique=True)
+    barcode = models.CharField(max_length=80, unique=True, null=True, blank=True)
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, null=True, blank=True)
+    color = models.CharField(max_length=80, blank=True)
+    size = models.CharField(max_length=60, blank=True)
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['product', 'label'], name='product_variant_label_unique')]
+
+    def __str__(self):
+        return f'{self.sku} · {self.product.name} · {self.label}'
+
+
+class AgreementBenefit(models.Model):
+    TYPES = [('percent', 'Descuento porcentual'), ('fixed', 'Descuento fijo'),
+             ('price', 'Precio preferencial unitario'), ('catalog', 'Catálogo exclusivo'),
+             ('mining', 'Lentes mineros'), ('family', 'Cargas familiares'),
+             ('evaluation', 'Evaluación visual'), ('contribution', 'Aporte de organización'), ('other', 'Otro')]
+    agreement = models.ForeignKey(Agreement, on_delete=models.PROTECT, related_name='benefits')
+    name = models.CharField(max_length=160)
+    description = models.TextField(max_length=2000, blank=True)
+    kind = models.CharField(max_length=16, choices=TYPES)
+    value = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    products = models.ManyToManyField(Product, blank=True)
+    category = models.ForeignKey(StockCategory, on_delete=models.PROTECT, null=True, blank=True)
+    starts_on = models.DateField(null=True, blank=True)
+    ends_on = models.DateField(null=True, blank=True)
+    role = models.CharField(max_length=10, choices=[('all', 'Titular y cargas'), ('titular', 'Titular'), ('carga', 'Carga familiar')], default='all')
+    conditions = models.TextField(max_length=2000, blank=True)
+    active = models.BooleanField(default=False)
+
+    class Meta:
+        indexes = [models.Index(fields=['agreement', 'active'], name='benefit_agreement_active')]
+        constraints = [models.CheckConstraint(condition=models.Q(value__isnull=True) | models.Q(value__gte=0), name='benefit_nonnegative'),
+                       models.CheckConstraint(condition=~models.Q(kind='percent') | models.Q(value__lte=100), name='benefit_percent_limit')]
+
+    def __str__(self):
+        return f'{self.agreement} · {self.name}'
+
+
+class TransferConfiguration(models.Model):
+    # La configuración comercial necesita una aprobación posterior de la empresa.
+    recipient = models.CharField(max_length=180, default='Ópticas Amaru · DEMOSTRACIÓN')
+    bank = models.CharField(max_length=120, default='Banco ficticio · SIN OPERACIÓN')
+    account_type = models.CharField(max_length=80, default='Cuenta de demostración')
+    account_number = models.CharField(max_length=80, default='DEMO-NO-OPERATIVA')
+    holder_rut = models.CharField(max_length=40, default='DEMO-SIN-RUT-BANCARIO')
+    email = models.EmailField(blank=True)
+    reserve_hours = models.PositiveSmallIntegerField(default=48)
+
+
+class TransferPayment(models.Model):
+    STATES = [('pending', 'Pendiente de pago'), ('submitted', 'Comprobante enviado'), ('review', 'En revisión'),
+              ('approved', 'Pago aprobado'), ('rejected', 'Pago rechazado'), ('cancelled', 'Cancelado')]
+    quote = models.OneToOneField(Quote, on_delete=models.PROTECT, related_name='transfer_payment')
+    reference = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    amount = models.DecimalField(max_digits=12, decimal_places=0)
+    bank_snapshot = models.JSONField(default=dict)
+    state = models.CharField(max_length=12, choices=STATES, default='pending')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [models.Index(fields=['state', 'created_at'], name='payment_state_created')]
+        constraints = [models.CheckConstraint(condition=models.Q(amount__gte=0), name='payment_nonnegative')]
+
+
+def voucher_path(instance, filename):
+    return f'pagos/{instance.payment_id}/{uuid.uuid4().hex}{Path(filename).suffix.lower()}'
+
+
+class PaymentVoucher(models.Model):
+    payment = models.ForeignKey(TransferPayment, on_delete=models.PROTECT, related_name='vouchers')
+    file = models.FileField(upload_to=voucher_path, storage=private_storage, validators=[validate_document])
+    declared_amount = models.DecimalField(max_digits=12, decimal_places=0)
+    sha256 = models.CharField(max_length=64)
+    submitted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class PaymentReview(models.Model):
+    payment = models.ForeignKey(TransferPayment, on_delete=models.PROTECT, related_name='reviews')
+    voucher = models.ForeignKey(PaymentVoucher, on_delete=models.PROTECT, null=True)
+    before = models.CharField(max_length=12)
+    after = models.CharField(max_length=12)
+    observations = models.TextField(max_length=1000)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class StockMovement(models.Model):
+    inventory = models.ForeignKey(Inventory, on_delete=models.PROTECT, related_name='movements')
+    kind = models.CharField(max_length=12, choices=[('entry', 'Entrada'), ('exit', 'Salida'), ('adjustment', 'Ajuste')])
+    delta = models.IntegerField()
+    before = models.PositiveIntegerField()
+    after = models.PositiveIntegerField()
+    reason = models.CharField(max_length=240)
+    reference = models.CharField(max_length=180, blank=True)
+    operation = models.UUIDField(default=uuid.uuid4, unique=True)
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, null=True, blank=True)
+    unit_cost = models.DecimalField(max_digits=12, decimal_places=0, null=True, blank=True)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [models.Index(fields=['inventory', 'created_at'], name='stock_movement_date')]
+
+
+class StockReservation(models.Model):
+    quote = models.ForeignKey(Quote, on_delete=models.PROTECT, related_name='stock_reservations')
+    inventory = models.ForeignKey(Inventory, on_delete=models.PROTECT, related_name='reservations')
+    quantity = models.PositiveIntegerField()
+    state = models.CharField(max_length=12, choices=[('active', 'Activa'), ('released', 'Liberada'), ('consumed', 'Consumida')], default='active')
+    expires_at = models.DateTimeField()
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['quote', 'inventory'], name='quote_stock_reservation_unique'),
+                       models.CheckConstraint(condition=models.Q(quantity__gt=0), name='stock_reservation_positive')]
+        indexes = [models.Index(fields=['state', 'expires_at'], name='stock_reservation_expiry')]

@@ -20,16 +20,27 @@ def record_consent(client,user):
     Consent.objects.create(client=client,authorized=client.consent,actor=user if user and user.is_authenticated else None)
     audit(user,'Consentimiento autorizado' if client.consent else 'Consentimiento no autorizado',client)
 @transaction.atomic
-def convert_quote(quote_id,user,inventory_id=None):
+def convert_quote(quote_id,user,inventory_id=None,*,payment_approval=False):
     q=Quote.objects.select_for_update().get(pk=quote_id)
     if Order.objects.filter(quote=q).exists(): return Order.objects.get(quote=q)
     if not q.approved: raise ValidationError('La cotización debe estar aprobada por el cliente.')
-    if not q.prescription or not q.prescription.valid or q.prescription.client_id!=q.client_id: raise ValidationError('Adjunte una receta vigente del cliente antes de generar la OT.')
+    needs_recipe = not q.lines.exists() or q.lines.filter(product__requires_prescription=True).exists()
+    if needs_recipe and (not q.prescription or not q.prescription.valid or q.prescription.client_id!=q.client_id):
+        raise ValidationError('Adjunte una receta vigente del cliente antes de generar la OT.')
+    payment = TransferPayment.objects.filter(quote=q).first()
+    if payment and payment.state != 'approved' and not (payment_approval and payment.state in ('review', 'submitted')):
+        raise ValidationError('El pago debe ser aprobado antes de generar la orden.')
+    from .stock import reserve_quote
+    if q.lines.exists():
+        reserve_quote(q, user, paid=bool(payment))
     item=None
     if inventory_id:
         item=Inventory.objects.select_for_update().get(pk=inventory_id)
         if item.quantity<1: raise ValidationError('No hay stock disponible.')
-        item.quantity-=1;item.save();audit(user,'Salida de 1 unidad por OT',item)
+        if q.lines.filter(product__stock_variants__stock__isnull=False).exists():
+            raise ValidationError('La cotización ya utiliza variantes inventariables. Conserva una única reserva.')
+        from .stock import move
+        move(item.pk,user,kind='exit',quantity=1,reason='Insumo asociado a OT',operation=uuid.uuid4(),reference=q.folio)
     o=Order.objects.create(quote=q,client=q.client,prescription=q.prescription,category=q.category,agreement=q.agreement,product_type=q.product_type,characteristics=q.characteristics,notes=q.notes,actor=user,inventory=item)
     if q.request:
         q.request.status='Derivada a Orden de Trabajo';q.request.save();audit(user,'Derivación a OT',q.request)
@@ -89,6 +100,14 @@ def _accept_receipt_atomic(order_id,user,accepted,signature,attempt,terms,expect
             if not bounds or bounds[2]-bounds[0]<8 or bounds[3]-bounds[1]<3:raise ValueError()
             content=raw
         except Exception: raise ValidationError('La firma no es una imagen PNG válida.')
+    quote = Quote.objects.select_for_update().get(pk=order.quote_id)
+    from .stock import dispatch_quote, reserve_quote
+    payment = TransferPayment.objects.filter(quote=quote).first()
+    if payment and payment.state != 'approved':
+        raise ValidationError('El pago debe estar aprobado antes de la entrega.')
+    if not payment and not quote.stock_reservations.exists():
+        reserve_quote(quote, user, paid=True)
+    dispatch_quote(quote, user)
     consume_locked(order, user, pickup_proof)
     config=SiteConfiguration.objects.first() or SiteConfiguration.objects.create()
     receipt=Receipt.objects.create(order=order,method='Firma en pantalla' if content else 'Recibí Conforme',terms=terms if terms is not None else config.warranty_terms,observations=str(observations)[:2000],actor=user)

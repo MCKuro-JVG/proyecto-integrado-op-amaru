@@ -140,3 +140,12 @@ body, body[data-experience="public"] { background: var(--amaru-paper); }
   body.printing-agreement #app-dialog::backdrop { display: none; }
   body.printing-agreement #app-dialog :is(.actions, [data-close-dialog]) { display: none !important; }
 }
+
+/* Módulos comerciales */
+.commercial-actions { margin: 10px 0; gap: 8px; }
+.inventory-tabs { margin-bottom: 22px; gap: 8px; }
+.inventory-tabs [aria-current="page"] { background: var(--amaru-salmon); color: var(--amaru-ink); }
+.voucher-preview img { display: block; max-width: min(100%, 360px); max-height: 300px; object-fit: contain; margin-top: 12px; }
+form[aria-busy="true"] .form-feedback::before { content: ""; display: inline-block; width: 12px; height: 12px; margin-inline-end: 8px; border: 2px solid var(--amaru-soft); border-top-color: var(--amaru-deep); border-radius: 50%; animation: amaru-loading 800ms linear infinite; }
+@keyframes amaru-loading { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { form[aria-busy="true"] .form-feedback::before { animation: none; } }

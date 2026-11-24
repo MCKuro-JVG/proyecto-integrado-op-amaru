@@ -50,7 +50,7 @@ def checkout(request):
     if not values['contact_authorized']:
         raise ValidationError('Autoriza el contacto para gestionar la solicitud.')
     row, created = register(client, request.user, values)
-    return Response({'reference': row.token, 'state': row.status, 'created': created}, status=201 if created else 200)
+    return Response({'id': row.pk, 'reference': row.token, 'state': row.status, 'created': created}, status=201 if created else 200)
 
 
 @transaction.atomic
@@ -81,6 +81,13 @@ def register(client, user, values):
         product = products[selection['product']]
         if selection['variant'] not in (product.variants or ['']):
             raise Conflict('Una variante cambió. Revisa el producto en el catálogo.')
+        from .stock import reserved
+        variant = product.stock_variants.filter(label=selection['variant'], active=True).first()
+        if product.stock_variants.exists():
+            from .models import Inventory
+            item = Inventory.objects.select_for_update().filter(variant=variant).first() if variant else None
+            if not item or selection['quantity'] > item.quantity - reserved(item):
+                raise Conflict('No hay stock suficiente para una de las variantes. Revisa las cantidades.')
         lines.append(PurchaseLine(product=product, product_name=product.name, variant=selection['variant'],
             quantity=selection['quantity'], unit_price=product.reference_price,
             characteristics={field: getattr(product, field) for field in ('sku', 'category', 'lens_type', 'crystal', 'color', 'treatments', 'requires_prescription')}))
@@ -97,6 +104,28 @@ def register(client, user, values):
     PurchaseLine.objects.bulk_create(lines)
     audit(user, 'Carrito registrado para revisión', row)
     return row, True
+
+
+@api_view(['POST'])
+def preview(request):
+    from .benefits import calculate
+    client = own_client(request.user)
+    form = CheckoutInput(data=request.data)
+    form.is_valid(raise_exception=True)
+    lines = []
+    for selected in form.validated_data['items']:
+        product = get_object_or_404(Product, pk=selected['product'], active=True)
+        if product.mining_only:
+            from .unions import membership_for
+            if not membership_for(client):
+                raise PermissionDenied()
+        if selected['variant'] not in (product.variants or ['']):
+            raise ValidationError('La variante no corresponde al producto.')
+        if product.reference_price is None:
+            return Response({'pending': True})
+        lines.append({'product': product, 'price': product.reference_price, 'quantity': selected['quantity']})
+    original, final, snapshot = calculate(client, lines)
+    return Response({'original': str(original), 'amount': str(final), 'benefit': snapshot, 'pending': False})
 
 
 def confirm_retry(row, client, values):

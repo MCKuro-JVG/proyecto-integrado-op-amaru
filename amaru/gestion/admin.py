@@ -38,7 +38,12 @@ class LoggedGroupAdmin(GroupAdmin,LoggedAdmin):pass
 admin.site.unregister(User);admin.site.register(User,LoggedUserAdmin)
 admin.site.unregister(Group);admin.site.register(Group,LoggedGroupAdmin)
 admin.site.register(Client,ClientAdmin)
-for m in [Inventory,SiteConfiguration]:admin.site.register(m,LoggedAdmin)
+admin.site.register(Inventory,ReadOnlyAdmin)
+admin.site.register(SiteConfiguration,LoggedAdmin)
+for m in [Brand,ProductModel,StockCategory,Supplier,AgreementBenefit,TransferConfiguration]:
+    admin.site.register(m,LoggedAdmin)
+for m in [ProductVariant,StockMovement,StockReservation,TransferPayment,PaymentVoucher,PaymentReview]:
+    admin.site.register(m,ReadOnlyAdmin)
 
 
 @admin.register(Agreement)

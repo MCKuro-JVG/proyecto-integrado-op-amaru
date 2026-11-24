@@ -5,6 +5,7 @@ from PIL import Image
 from pypdf import PdfReader
 def normalize_rut(value):
     value=value.replace('.','').replace(' ','').upper().strip()
+    if re.fullmatch(r'\d{7,8}[0-9K]',value): value=value[:-1]+'-'+value[-1]
     if not re.fullmatch(r'\d{7,8}-[0-9K]',value): raise ValidationError('Ingrese un RUT chileno válido, por ejemplo 12.345.678-5.')
     body,dv=value.split('-')
     s=sum(int(n)*(2+i%6) for i,n in enumerate(reversed(body)))
