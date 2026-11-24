@@ -285,6 +285,7 @@ class Product(models.Model):
     lens_type = models.CharField(max_length=80, blank=True)
     variants = models.JSONField(default=list, blank=True)
     reference_price = models.PositiveIntegerField(null=True, blank=True)
+    direct_checkout = models.BooleanField('Precio habilitado para checkout académico', default=False)
     requires_prescription = models.BooleanField(default=False)
     mining_only = models.BooleanField(default=False)
     mining_image = models.ImageField(upload_to=mining_image_path, storage=private_storage, blank=True)

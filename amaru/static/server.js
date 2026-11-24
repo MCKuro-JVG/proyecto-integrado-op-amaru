@@ -73,8 +73,8 @@ function renderPrivacy(){
 }
 async function renderMyAccount(){
  const data=await api('my-account/');
- const rows=data.inquiries.map(r=>[esc(r.reference),esc(r.kind),esc(date(r.created_at)),badge(r.status)]);
- return panel('Mis solicitudes',rows.length?table(['Referencia','Tipo','Fecha','Estado'],rows):note('Aún no tienes solicitudes enviadas desde esta cuenta.'))+
+ const rows=data.inquiries.map(r=>[esc(r.reference),esc(r.kind),esc(date(r.created_at)),badge(r.status),r.checkout_url?link('Consultar revisión y pago',r.checkout_url):'']);
+ return panel('Mis solicitudes',rows.length?table(['Referencia','Tipo','Fecha','Estado','Acción'],rows):note('Aún no tienes solicitudes enviadas desde esta cuenta.'))+
   panel('Mi convenio',note(data.agreement?'Convenio vigente y validado: '+data.agreement:'No tienes un convenio vigente y validado.')+
   (data.memberships||[]).map(row=>`<p>${esc(row.organization)} · ${esc(unionStates[row.state])} · ${row.available?'Vigente':'Sin beneficios vigentes'}</p>`).join('')+
   (session.mining?link('Catálogo de lentes mineros','catalogo.html?scope=mining'):''))+
@@ -234,7 +234,7 @@ async function render(){
  else if(page==='consulta'){
  const data=await list('orders/');screen.innerHTML=head('Mis pedidos','El servidor limita los registros a tu cuenta autenticada.')+actionButtons()+ordersTable(data.results,true)+pages(data);
  if(session.client_id&&!has('view_order')){
-  try{screen.insertAdjacentHTML('beforeend',await renderMyAccount());}
+  try{screen.insertAdjacentHTML('beforeend',await commercial.myPayments()+await renderMyAccount());}
   catch(e){screen.insertAdjacentHTML('beforeend',note(e.message));}
  }
  }
@@ -299,6 +299,7 @@ async function productForm(id){
   select('stock_category','Categoría de inventario',[['','Sin categoría'],...dynamicCategories.results.map(c=>[c.id,c.name])],p.stock_category)+
   input('material','Material','text',p.material,'maxlength="120"')+
   input('reference_price','Precio ficticio CLP','number',p.reference_price??'','min="0" step="1"')+
+  select('direct_checkout','Pago académico desde carrito',[['false','Requiere confirmación previa'],['true','Precio habilitado para checkout']],String(p.direct_checkout??false))+
   input('image','Imagen JPG o PNG','file','','accept="image/jpeg,image/png"')+
   select('active','Visibilidad',[['true','Activo'],['false','Desactivado']],String(p.active??true))+
   select('mining_only','Catálogo',[['false','General'],['true','Exclusivo de lentes mineros']],String(p.mining_only??false))+
@@ -423,40 +424,60 @@ async function renderProduct(){
    select('variant','Variante',p.variants?.length?p.variants:[['','Modelo único']])+input('quantity','Cantidad','number',1,'required min="1" max="99"'),'Agregar al carrito'))+
   link('Ver carrito','carrito.html')+link('Volver al catálogo','catalogo.html');
 }
+async function checkoutKey(payload){
+ const raw=new TextEncoder().encode(JSON.stringify(payload));
+ const digest=await crypto.subtle.digest('SHA-256',raw);
+ const signature=Array.from(new Uint8Array(digest),x=>x.toString(16).padStart(2,'0')).join('');
+ let previous;try{previous=JSON.parse(sessionStorage.getItem('amaru-checkout-attempt')||'null');}catch{}
+ if(previous?.signature===signature)return previous.key;
+ const key=crypto.randomUUID();sessionStorage.setItem('amaru-checkout-attempt',JSON.stringify({signature,key}));return key;
+}
 async function renderCart(){
+ if(params.get('pago')){if(!session.authenticated){loginForm();return;}await commercial.checkoutPage(params.get('pago'));return;}
+ if(params.get('solicitud')){
+  if(!session.authenticated){loginForm();return;}
+  const r=await api('purchases/'+encodeURIComponent(params.get('solicitud'))+'/');
+  if(r.payment){location.replace('carrito.html?pago='+r.payment);return;}
+  screen.innerHTML=head('Revisión previa al pago')+commercial.checkoutSteps(1)+
+   note('Recibimos tu selección. La óptica debe confirmar el precio o revisar la receta antes de habilitar la transferencia.')+
+   note('Referencia: '+r.reference+' · Estado: '+r.state)+panel('Productos',table(['Producto','Variante','Cantidad'],r.items.map(i=>[esc(i.product_name),esc(i.variant||'Modelo único'),i.quantity])))+
+   btn('Comprobar si el pago está disponible','reload')+link('Mis pedidos','consulta.html')+link('Volver al carrito','carrito.html');return;
+ }
  const items=readCart();
- screen.innerHTML=head('Carrito','Revisa los productos antes de enviar una solicitud.')+link('Seguir explorando','catalogo.html');
- if(!items.length){screen.innerHTML+=note('Tu carrito está vacío.');return;}
+ screen.innerHTML=head('Mi carrito','Revisa tu selección y continúa con la transferencia académica.')+commercial.checkoutSteps(1)+link('Seguir explorando','catalogo.html');
+ if(!items.length){screen.innerHTML+=note('Tu carrito está vacío.')+(session.client_id?link('Retomar mis pagos','pagos.html'):'');return;}
  const ids=[...new Set(items.map(i=>i.product))];
  const {results}=await api('products/?ids='+ids.join(','));
  const products=new Map(results.map(p=>[p.id,p]));
  const invalid=items.some(i=>!products.has(i.product)||!(products.get(i.product).variants?.length?products.get(i.product).variants:['']).includes(i.variant));
- let total=0,complete=true;
  const rows=items.map((i,index)=>{
-  const product=products.get(i.product),price=product?.reference_price;
-  if(price==null)complete=false;else total+=i.quantity*price;
-  return [esc(product?.name||'Producto no disponible')+'<br>'+esc([i.variant,product?.lens_type,product?.crystal,product?.color,product?.treatments].filter(Boolean).join(' · ')),
-   `<input aria-label="Cantidad de ${esc(product?.name||'producto')}" type="number" min="1" max="99" value="${i.quantity}" data-cart-index="${index}">`,
-   price==null?'Por cotizar':currency(price*i.quantity),product?.requires_prescription?'Sí':'—',btn('Quitar','cart-remove',index)];
+  const p=products.get(i.product),price=p?.reference_price;
+  return ['<div class="cart-product"><img src="'+esc(p?.image_url||'/static/interfaz/img/atencion_optica.svg')+'" alt="'+esc(p?.name||'Producto')+'"><div>'+esc(p?.name||'Producto no disponible')+'<br><small>'+esc([i.variant,p?.lens_type,p?.crystal,p?.color,p?.treatments].filter(Boolean).join(' · '))+'</small></div></div>',
+   `<input aria-label="Cantidad de ${esc(p?.name||'producto')}" type="number" min="1" max="99" value="${i.quantity}" data-cart-index="${index}">`,
+   price==null?'Por confirmar':currency(price),price==null?'Por confirmar':currency(price*i.quantity),p?.requires_prescription?'Revisión de receta vigente':'No requiere',btn('Quitar','cart-remove',index)];
  });
- screen.innerHTML+=panel('Productos seleccionados',table(['Producto','Cantidad','Subtotal','Receta','Acción'],rows)+note((complete?'Subtotal de referencia: ':'Subtotal de productos con precio: ')+currency(total)));
+ screen.innerHTML+=panel('Productos seleccionados',table(['Producto y características','Cantidad','Precio unitario','Subtotal','Receta','Acción'],rows));
  if(invalid){screen.innerHTML+=note('Quita o reemplaza los productos y variantes que ya no están disponibles.');return;}
- if(!session.authenticated){screen.innerHTML+=panel('Identificación',note('Inicia sesión con tu cuenta de cliente para enviar esta selección.')+form('login',input('username','Usuario o correo')+input('password','Contraseña','password','','required autocomplete="current-password"'),'Iniciar sesión')+registrationLink);return;}
+ if(!session.authenticated){screen.innerHTML+=panel('Identificación',note('Inicia sesión con tu cuenta de cliente para continuar al pago.')+form('login',input('username','Usuario o correo')+input('password','Contraseña','password','','required autocomplete="current-password"'),'Iniciar sesión')+registrationLink);return;}
  if(!session.client_id){screen.innerHTML+=note('Se requiere una cuenta vinculada a una ficha activa.');return;}
  const [profile,recipes]=await Promise.all([api('checkout/'),api('my-prescriptions/')]);
  const needsRecipe=items.some(i=>products.get(i.product).requires_prescription);
- screen.innerHTML+=panel('Resumen de solicitud',`<p>${esc(profile.name)} · ${esc(profile.phone)} · ${esc(profile.email||'Sin correo')}</p>`+
-  note(profile.agreement?'Convenio validado y vigente: '+profile.agreement:'Atención particular')+note('Estado inicial: Nueva · Pendiente de revisión')+
-  (needsRecipe?note('El carrito requiere una receta vigente. Si aún no tienes una, solicita una evaluación.'): '')+
-  form('checkout',select('mode','Modalidad',[['cotizacion','Solicitud de cotización'],['compra','Solicitud de compra']])+
-   select('prescription','Receta privada',[['','Selecciona una receta si corresponde'],...recipes.map(r=>[r.id,'Receta del '+r.issued_on])])+
-   area('reason','Observaciones','Solicito revisar la selección del catálogo.')+check('contact_authorized','Autorizo el contacto para gestionar esta solicitud.'),'Enviar solicitud')+
-  '<details><summary>Adjuntar receta privada</summary>'+form('cart-recipe',input('issued_on','Fecha de emisión','date')+input('file','JPG, PNG o PDF','file','','required accept=".jpg,.jpeg,.png,.pdf"'),'Guardar receta')+'</details>'+
-  link('Agendar evaluación','formulario_remoto.html'));
- const checkout=screen.querySelector('[data-form=checkout]');checkout.dataset.key=crypto.randomUUID();
- try{const pricing=await api('checkout-preview/',{method:'POST',body:{items:readCart(),mode:'cotizacion',reason:'Vista previa del carrito',contact_authorized:true,idempotency_key:checkout.dataset.key}});
- if(!pricing.pending)checkout.insertAdjacentHTML('beforebegin',panel('Precio de referencia y beneficios',note('Precio original: '+currency(pricing.original)+' · '+(pricing.benefit.name?'Beneficio '+pricing.benefit.name+' · Descuento '+currency(pricing.benefit.discount):'Sin descuento')+' · Precio final de referencia: '+currency(pricing.amount)+' · Sujeto a confirmación del personal.')));
- }catch(error){checkout.insertAdjacentHTML('beforebegin',note(error.message));}
+ let pricing=null,priceError='';
+ try{pricing=await api('checkout-preview/',{method:'POST',body:{items,mode:'compra',reason:'Vista previa del carrito',contact_authorized:true,idempotency_key:crypto.randomUUID()}});}catch(e){priceError=e.message;}
+ const ready=pricing&&!pricing.pending&&Number(pricing.amount)>0&&!needsRecipe&&items.every(i=>products.get(i.product).direct_checkout);
+ screen.innerHTML+=panel('Resumen de compra',`<p>${esc(profile.name)} · ${esc(profile.phone)} · ${esc(profile.email||'Sin correo')}</p>`+
+  note(profile.agreement?'Convenio validado y vigente: '+profile.agreement:'Atención particular')+
+  (pricing&&!pricing.pending?'<dl class="checkout-totals"><dt>Subtotal</dt><dd>'+currency(pricing.original)+'</dd><dt>Beneficio aplicable</dt><dd>'+esc(pricing.benefit.name||'Sin descuento')+' · '+currency(pricing.benefit.discount||0)+'</dd><dt>Total final en CLP</dt><dd><strong>'+currency(pricing.amount)+'</strong></dd></dl>':note(priceError||'Un precio necesita confirmación previa de la óptica.'))+
+  note(ready?'El servidor volverá a comprobar precios, beneficios y disponibilidad al continuar.':'Antes de pagar, la óptica debe confirmar los precios, las existencias o la receta requerida.')+
+  (needsRecipe?note('Adjunta o selecciona tu receta vigente para enviarla a revisión. La carga por sí sola no sustituye la revisión óptica.'):'')+
+  note('Pago de demostración académica. No realizar transferencias reales.')+
+  form('checkout',hidden('mode','compra')+select('prescription','Receta privada',[['','No corresponde / selecciona si se requiere'],...recipes.map(r=>[r.id,'Receta del '+r.issued_on])])+
+   area('reason','Observaciones','Confirmo mi selección académica del catálogo.')+check('contact_authorized','Autorizo el contacto para gestionar esta operación.')+
+   check('confirmed','Confirmo los productos, cantidades y total mostrados. Entiendo que es una demostración sin transferencias reales.'),'Continuar al pago')+
+  '<details><summary>Adjuntar receta privada</summary>'+form('cart-recipe',input('issued_on','Fecha de emisión','date')+input('file','JPG, PNG o PDF','file','','required accept=".jpg,.jpeg,.png,.pdf"'),'Guardar receta')+'</details>'+link('Agendar evaluación','formulario_remoto.html'));
+ const checkout=screen.querySelector('[data-form=checkout]');checkout.dataset.expected=pricing?.amount||'';
+ checkout.dataset.direct=ready?'1':'0';checkout.querySelector('[type=submit]').disabled=!ready;
+ checkout.querySelector('.form-actions').insertAdjacentHTML('beforeend','<button type="submit" class="button soft" data-checkout-review>'+(ready?'Solicitar cotización en lugar de pagar':'Solicitar revisión previa')+'</button>');
  checkout.elements.prescription.required=needsRecipe;
  checkout.elements.contact_authorized.required=true;
 }
@@ -759,7 +780,7 @@ document.addEventListener('submit',async e=>{
  const f=e.target;if(!f.dataset.form)return;e.preventDefault();if(!f.reportValidity())return;
  if(f.dataset.form.startsWith('commerce-')){await commercial.submit(e);return;}
  if(f.dataset.busy==='1')return;
- const data=Object.fromEntries(new FormData(f)),submit=f.querySelector('[type=submit]');
+ const data=Object.fromEntries(new FormData(f)),submit=e.submitter||f.querySelector('[type=submit]');
  if(f.dataset.form==='inquiry'&&data.kind==='agenda'&&(!data.day||!data.slot)){
   f.querySelector('[data-calendar-feedback]').textContent='Selecciona un día y un horario disponible.';
   f.querySelector('#appointment-title').scrollIntoView({block:'nearest'});
@@ -773,7 +794,16 @@ document.addEventListener('submit',async e=>{
  case 'representative-review':{if(data.approved==='false'&&!data.confirmed)throw new Error('Marca la confirmación para rechazar la solicitud.');const id=data.id;delete data.id;delete data.confirmed;await api('membership/queue/'+id+'/',{method:'POST',body:data});break;}
  case 'cart-add':{const items=readCart(),product=Number(data.product),quantity=Number(data.quantity),variant=data.variant;const line=items.find(i=>i.product===product&&i.variant===variant);if(line){if(line.quantity+quantity>99)throw new Error('El máximo por variante es 99.');line.quantity+=quantity;}else{if(items.length>=20)throw new Error('El carrito admite hasta 20 selecciones.');items.push({product,variant,quantity});}saveCart(items);location.href='carrito.html';return;}
  case 'cart-recipe':await api('my-prescriptions/',{method:'POST',body:new FormData(f)});await renderCart();message('Receta privada guardada. Selecciónala para continuar.');return;
- case 'checkout':{const payload={...data,items:readCart(),contact_authorized:!!data.contact_authorized,idempotency_key:f.dataset.key};if(!payload.prescription)delete payload.prescription;const result=await api('checkout/',{method:'POST',body:payload});saveCart([]);screen.innerHTML=head('Solicitud registrada','El personal revisará tu selección.')+note('Referencia: '+result.reference)+link('Volver al catálogo','catalogo.html');return;}
+ case 'checkout':{
+  const direct=!e.submitter?.hasAttribute('data-checkout-review');
+  if(direct&&(f.dataset.direct!=='1'||!data.confirmed))throw new Error('Confirma la selección y el total. Si falta una revisión, solicita confirmación previa.');
+  const payload={...data,mode:direct?'compra':'cotizacion',items:readCart(),contact_authorized:!!data.contact_authorized,confirmed:!!data.confirmed};
+  if(!payload.prescription)delete payload.prescription;
+  payload.idempotency_key=await checkoutKey(payload);
+  if(direct)payload.expected_amount=f.dataset.expected;
+  const result=await api(direct?'checkout-payment/':'checkout/',{method:'POST',body:payload});
+  saveCart([]);location.href='carrito.html?'+(direct?'pago='+result.payment.id:'solicitud='+result.id);return;
+ }
  case 'purchase-quote':{const prices=Object.fromEntries(Object.entries(data).filter(([key])=>key.startsWith('price_')).map(([key,value])=>[key.slice(6),Number(value)]));const result=await api('purchases/'+data.id+'/quote/',{method:'POST',body:{prices}});close();if(has('change_quote'))await quoteForm(result.id);message('Borrador creado: '+result.folio);return;}
  case 'register':{
    const r=await api('register/',{method:'POST',body:{...data,privacy:!!data.privacy,promotions:!!data.promotions}});

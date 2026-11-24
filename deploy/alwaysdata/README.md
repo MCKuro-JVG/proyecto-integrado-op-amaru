@@ -102,3 +102,6 @@ La migración 0014 crea las entidades de beneficios, maestros, variantes, reserv
 Los comprobantes de hasta 5 MB se almacenan en el MEDIA_ROOT privado del perfil y se sirven mediante autorización Django. El límite de archivo y los registros históricos deben considerarse en el consumo de disco. `seed_commercial_demo --academic --credentials-file "$HOME/.amaru-demo/commercial-credentials.json"` prepara únicamente datos ficticios y guarda las contraseñas nuevas en ese archivo privado. El banco y la cuenta que recibe el cliente son inoperativos.
 
 Se conserva el esquema de static-releases por versión Git y recarga explícita del proceso WSGI. Después de reiniciar, comprueba los SHA-256 de server.js, commercial.js y los CSS, inicia sesión en Chrome y verifica inventario, beneficios, carrito y comprobantes. Consulta [el procedimiento completo](../../docs/COMERCIO_INVENTARIO.md).
+# Checkout integrado
+
+La migración 0016 agrega la habilitación de precio académico directo en Product, inicialmente desactivada. Respalda MariaDB, revisa el plan y aplica la migración antes de activar la versión WSGI. El seed académico habilita solo los accesorios ficticios. Conserva el almacenamiento privado de comprobantes. Verifica desde Chrome el recorrido completo de `/app/carrito.html` siguiendo [la documentación del checkout](../../docs/CHECKOUT_ACADEMICO.md).

@@ -208,7 +208,8 @@ def my_account(request):
     inquiries = client.inquiries.filter(actor=request.user).order_by('-created_at', '-pk')[:50]
     result = Response({
         'inquiries': [
-            {'reference': row.token, 'kind': row.get_kind_display(), 'status': row.status, 'created_at': row.created_at}
+            {'reference': row.token, 'kind': row.get_kind_display(), 'status': row.status, 'created_at': row.created_at,
+             'checkout_url': f'/app/carrito.html?solicitud={row.pk}' if row.kind == 'compra' else None}
             for row in inquiries
         ],
         'agreement': str(agreement) if agreement else None,

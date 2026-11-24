@@ -66,6 +66,9 @@ class Command(BaseCommand):
                 product,_=Product.objects.get_or_create(sku='DEMO-COM-'+code,defaults={'name':'DEMO · Accesorio ficticio '+code,'category':'repuesto',
                     'stock_category':category,'brand':brand,'model':model,'reference_price':10000,
                     'description':'Producto ficticio sin utilización comercial.','variants':['Negro','Azul']})
+                if not product.direct_checkout:
+                    product.direct_checkout = True
+                    product.save(update_fields=['direct_checkout'])
                 for color in product.variants:
                     variant,_=ProductVariant.objects.get_or_create(product=product,label=color,defaults={'sku':product.sku+'-'+color.upper(),
                         'barcode':'INTERNO-'+code+'-'+color.upper(),'color':color,'supplier':supplier})

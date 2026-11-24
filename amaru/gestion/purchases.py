@@ -5,6 +5,8 @@ from rest_framework import serializers
 from rest_framework.decorators import api_view
 from rest_framework.exceptions import APIException, PermissionDenied, ValidationError
 from rest_framework.response import Response
+from rest_framework.throttling import UserRateThrottle
+from rest_framework.decorators import throttle_classes
 
 from .catalog_requests import own_client
 from .membership import verified_agreement
@@ -35,6 +37,49 @@ class CheckoutInput(serializers.Serializer):
         if len(pairs) != len(values):
             raise serializers.ValidationError('Consolida las cantidades de cada producto y variante.')
         return values
+
+
+class PaymentCheckoutInput(CheckoutInput):
+    confirmed = serializers.BooleanField()
+    expected_amount = serializers.DecimalField(max_digits=12, decimal_places=0, min_value=1)
+
+
+class CheckoutThrottle(UserRateThrottle):
+    rate = '12/min'
+    scope = 'payment_checkout'
+
+
+@api_view(['POST'])
+@throttle_classes([CheckoutThrottle])
+@transaction.atomic
+def checkout_payment(request):
+    """Checkout académico de precios habilitados; conserva el circuito de revisión."""
+    from .commercial import create_payment, payment_summary
+    from .unions import private
+    client = own_client(request.user)
+    form = PaymentCheckoutInput(data=request.data)
+    form.is_valid(raise_exception=True)
+    values = form.validated_data
+    if not values['confirmed'] or not values['contact_authorized'] or values['mode'] != 'compra':
+        raise ValidationError('Confirma la selección, el total y el contacto antes de continuar al pago académico.')
+    row, created = register(client, request.user, values)
+    if row.purchase_quote_id:
+        quote = Quote.objects.select_for_update().get(pk=row.purchase_quote_id)
+        payment = getattr(quote, 'transfer_payment', None)
+        if not payment:
+            raise Conflict('Esta solicitud necesita la confirmación de la óptica antes de pagar.')
+    else:
+        lines = list(row.purchase_lines.select_related('product'))
+        if any(not line.product.direct_checkout or not line.unit_price for line in lines):
+            raise Conflict('Uno de los precios requiere confirmación de la óptica. Solicita revisión previa.')
+        if any(line.product.requires_prescription for line in lines):
+            raise Conflict('La óptica debe revisar tu receta antes de habilitar el pago. Solicita revisión previa.')
+        if any(not line.product.stock_variants.filter(label=line.variant, active=True).exists() for line in lines):
+            raise Conflict('La óptica debe confirmar las existencias de esta variante antes del pago.')
+        quote = build_quote(row, request.user, approved=True)
+        payment = create_payment(quote, request.user, expected_amount=values['expected_amount'])
+        audit(request.user, 'Checkout académico confirmado desde el carrito', row)
+    return private({'purchase': row.pk, 'payment': payment_summary(payment), 'created': created}, status=201 if created else 200)
 
 
 @api_view(['GET', 'POST'])
@@ -143,7 +188,9 @@ def detail(request, pk):
     if not request.user.has_perm('gestion.view_inquiry'):
         rows = rows.filter(client__user=request.user, client__active=True)
     row = get_object_or_404(rows, pk=pk)
-    return Response({'mode': row.purchase_mode, 'state': row.status, 'prescription': row.prescription_id,
+    from .models import TransferPayment
+    payment = TransferPayment.objects.filter(quote_id=row.purchase_quote_id).first() if row.purchase_quote_id else None
+    return Response({'id': row.pk, 'reference': row.token, 'payment': payment.pk if payment else None, 'mode': row.purchase_mode, 'state': row.status, 'prescription': row.prescription_id,
         'agreement': row.agreement.name if row.agreement else None, 'quote': row.purchase_quote_id,
         'items': list(row.purchase_lines.values('id','product_id','product_name','variant','quantity','unit_price','characteristics'))})
 
@@ -164,29 +211,33 @@ def quote(request, pk):
             return Response({'id': row.purchase_quote_id, 'folio': row.purchase_quote.folio})
         if row.status in ('Cancelada', 'Cerrada') or not row.client.active:
             raise Conflict('La solicitud o la ficha no permite generar una cotización.')
-        lines = list(row.purchase_lines.all())
-        submitted = form.validated_data['prices']
-        if submitted.keys() - {str(line.pk) for line in lines}:
-            raise ValidationError('Una referencia de precio no corresponde al detalle.')
-        prices = [submitted.get(str(line.pk), line.unit_price) for line in lines]
-        if not lines or any(price is None for price in prices):
-            raise ValidationError('Indica un precio para cada producto sin valor de referencia.')
-        total = sum(line.quantity * price for line, price in zip(lines, prices))
-        if total > 999999999999:
-            raise ValidationError('El monto supera el máximo de una cotización.')
-        # La afiliación se comprobó al enviar la solicitud. Su referencia histórica se conserva.
-        agreement = row.agreement
-        if agreement and not hasattr(agreement, 'union'):
-            current = verified_agreement(row.client)
-            agreement = agreement if current and current.pk == agreement.pk else None
-        mode = 'seguridad' if all(line.characteristics['category']=='seguridad' for line in lines) else 'particular'
-        quote = Quote.objects.create(client=row.client, prescription=row.prescription, actor=request.user,
-            agreement=agreement, category='convenio' if agreement else 'particular', product_type=mode,
-            amount=total, approved=False, notes=f'Solicitud de catálogo #{row.pk}. Requiere revisión y aprobación.')
-        QuoteLine.objects.bulk_create([QuoteLine(quote=quote, product=line.product, product_name=line.product_name,
-            variant=line.variant, quantity=line.quantity, unit_price=price) for line, price in zip(lines, prices)])
-        row.purchase_quote = quote
-        row.status = 'En revisión'
-        row.save(update_fields=['purchase_quote','status','updated_at'])
+        quote = build_quote(row, request.user, form.validated_data['prices'])
         audit(request.user, 'Cotización en borrador creada desde carrito', row)
     return Response({'id': quote.pk, 'folio': quote.folio}, status=201)
+
+
+def build_quote(row, user, submitted=None, *, approved=False):
+    """El llamador mantiene el bloqueo de la solicitud; un folio por selección."""
+    lines = list(row.purchase_lines.all())
+    submitted = submitted or {}
+    if submitted.keys() - {str(line.pk) for line in lines}:
+        raise ValidationError('Una referencia de precio no corresponde al detalle.')
+    prices = [submitted.get(str(line.pk), line.unit_price) for line in lines]
+    if not lines or any(price is None for price in prices):
+        raise ValidationError('Indica un precio para cada producto sin valor de referencia.')
+    total = sum(line.quantity * price for line, price in zip(lines, prices))
+    if total > 999999999999:
+        raise ValidationError('El monto supera el máximo de una cotización.')
+    current = verified_agreement(row.client)
+    agreement = row.agreement if current and row.agreement_id == current.pk else None
+    mode = 'seguridad' if all(line.characteristics['category']=='seguridad' for line in lines) else 'particular'
+    quote = Quote.objects.create(client=row.client, prescription=row.prescription, actor=user,
+        agreement=agreement, category='convenio' if agreement else 'particular', product_type=mode,
+        amount=total, approved=approved, notes=f'Solicitud de catálogo #{row.pk}. '+(
+            'Selección y precio académico habilitado aceptados por el cliente.' if approved else 'Requiere revisión y aprobación.'))
+    QuoteLine.objects.bulk_create([QuoteLine(quote=quote, product=line.product, product_name=line.product_name,
+        variant=line.variant, quantity=line.quantity, unit_price=price) for line, price in zip(lines, prices)])
+    row.purchase_quote = quote
+    row.status = 'En revisión'
+    row.save(update_fields=['purchase_quote','status','updated_at'])
+    return quote

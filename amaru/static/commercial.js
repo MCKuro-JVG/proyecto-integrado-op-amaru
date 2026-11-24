@@ -9,6 +9,15 @@ window.AmaruCommercial=function(ctx){
  const managed={brands:['Marcas','brand'], 'product-models':['Modelos','productmodel'], 'stock-categories':['Categorías','stockcategory'],suppliers:['Proveedores','supplier']};
  const chosen=(key)=>params.get(key)||'';
  let currentPayment=null;
+ const checkoutSteps=stage=>'<ol class="checkout-steps" aria-label="Etapas de compra">'+['Mi carrito','Transferencia bancaria','Envío del comprobante'].map((label,index)=>'<li '+(index+1===stage?'aria-current="step"':'')+'><span>'+ (index+1)+'</span>'+label+'</li>').join('')+'</ol>';
+ async function checkoutPage(id){await paymentDetail(id,false,true);}
+ async function myPayments(){
+  const data=await api('payments/');
+  return panel('Mis compras y pagos',note('El comprobante se revisa antes de aprobar el pago. Puedes retomar aquí un pago iniciado desde el carrito.')+
+   table(['Folio / Productos','Total','Estado del pedido','Estado del pago','Observaciones','Acciones'],data.results.map(p=>[
+    esc(p.folio)+'<br>'+p.items.map(i=>esc(i.name)+' × '+i.quantity).join('<br>'),currency(p.amount),esc(p.order?p.order.folio+' · '+p.order.state:'Pendiente de aprobación del pago'),esc(p.state_label),esc(p.history.at(-1)?.observations||'Sin observaciones'),link('Ver pago y comprobantes','carrito.html?pago='+p.id)]))+
+   (data.next?link('Ver todos mis pagos','pagos.html'):''));
+ }
  const options=rows=>rows.map(r=>[r.id,r.name]);
  const actionBar=body=>'<div class="actions commercial-actions">'+body+'</div>';
  const controls=(brands,categories,suppliers)=>form('commerce-stock-search',hidden('vista',chosen('vista')||'productos')+
@@ -129,19 +138,25 @@ window.AmaruCommercial=function(ctx){
     esc(p.reference)+'<br>'+esc(p.folio),esc(p.client_name)+'<br>'+esc(p.rut),esc(p.agreement||'Particular'),currency(p.amount),p.vouchers.length?currency(p.vouchers.at(-1).declared_amount):'—',
     esc(date(p.created_at)),esc(p.state_label),link('Ver pago y comprobantes','pagos.html?pago='+p.id)])))+pages(data);
  }
- async function paymentDetail(id,modal=true){
+ async function paymentDetail(id,modal=true,checkout=false){
   const p=await api('payments/'+id+'/');currentPayment=p;
   const bankLabels={recipient:'Destinatario',bank:'Banco',account_type:'Tipo de cuenta',account_number:'Número de cuenta',holder_rut:'RUT del titular',email:'Correo'};
-  let body=note('DEMOSTRACIÓN ACADÉMICA — No realizar transferencias reales.')+`<h3>${esc(p.folio)}</h3><p>${esc(p.client_name)} · ${esc(p.state_label)}</p><p>Referencia: ${esc(p.reference)}</p>`+
+  let body=(checkout?checkoutSteps(['pending','rejected'].includes(p.state)?2:3):'')+note('Pago de demostración académica. No realizar transferencias reales.')+
+   (checkout?panel('Forma de pago','<p><strong>Transferencia bancaria</strong> · Única modalidad disponible en esta demostración.</p>'):'')+
+   `<h3>${esc(p.folio)}</h3><p>${esc(p.client_name)} · <strong data-payment-state>${esc(p.state_label)}</strong></p><p>Referencia: ${esc(p.reference)} ${btn('Copiar referencia','commerce-copy',p.reference)}</p>`+
    `<p>Precio original: ${currency(p.original_amount)} · ${p.benefit.name?'Beneficio '+esc(p.benefit.name)+' · Descuento '+currency(p.benefit.discount):'Sin descuento'} · Total confirmado: <strong>${currency(p.amount)}</strong></p>`+
+   btn('Copiar monto exacto','commerce-copy',p.amount)+
    '<dl>'+Object.entries(bankLabels).map(([key,label])=>`<dt>${label}</dt><dd>${esc(p.bank[key]||'—')} ${p.bank[key]?btn('Copiar '+label.toLowerCase(),'commerce-copy',p.bank[key]):''}</dd>`).join('')+'</dl>';
+  if(['submitted','review'].includes(p.state))body+=note('Tu comprobante está siendo revisado por Óptica Amaru. Subirlo no significa que el pago esté aprobado.');
+  if(p.state==='rejected')body+=note('La óptica solicitó un nuevo comprobante: '+(p.history.at(-1)?.observations||'Revisa el archivo y vuelve a enviarlo.'));
   body+=panel('Productos y pedido',table(['Producto','Variante','Cantidad','Precio unitario'],p.items.map(line=>[esc(line.name),esc(line.variant||'Modelo único'),line.quantity,currency(line.unit_price)]))+
    note(p.order?p.order.folio+' · '+p.order.state:'Pendiente de aprobación del pago y creación de la orden.'));
   body+=panel('Comprobantes',table(['Fecha','Monto declarado','Archivo privado'],p.vouchers.map(v=>[esc(date(v.created_at)),currency(v.declared_amount),link('Descargar comprobante',v.url)])));
-  if(!has('view_transferpayment')&&['pending','rejected'].includes(p.state))body+=panel('Enviar comprobante',form('commerce-voucher',hidden('id',id)+
+  if(!has('view_transferpayment')&&['pending','rejected'].includes(p.state))body+=panel('Subir comprobante de transferencia',form('commerce-voucher',hidden('id',id)+hidden('checkout',checkout?'1':'')+
    input('declared_amount','Monto declarado CLP','number',p.amount,'required min="0" step="1"')+
    input('file','Comprobante JPG, PNG o PDF (máximo 5 MB)','file','','required accept=".jpg,.jpeg,.png,.pdf"')+
-   '<div class="voucher-preview wide" data-voucher-preview></div>','Enviar comprobante'));
+   '<div class="voucher-preview wide" data-voucher-preview role="status"></div><p class="wide">Puedes reemplazar el archivo seleccionado antes de enviarlo. Máximo 5 MB.</p>','Enviar comprobante de pago'));
+  if(has('change_transferpayment')&&p.vouchers.length&&!['approved','cancelled'].includes(p.state))body+=actionBar(btn('Aprobar pago','commerce-review-choice','approved')+btn('Rechazar pago','commerce-review-choice','rejected')+btn('Solicitar nuevo comprobante','commerce-review-choice','rejected'));
   if(has('change_transferpayment')&&!['approved','cancelled'].includes(p.state))body+=panel('Revisión autorizada',note('Contrasta el comprobante con los movimientos bancarios efectivos. En esta demostración se utiliza evidencia ficticia.')+
    form('commerce-review',hidden('id',id)+hidden('expected_state',p.state)+hidden('voucher',p.vouchers.at(-1)?.id||'')+
     select('state','Decisión',p.vouchers.length?[['review','En revisión'],['approved','Aprobar pago'],['rejected','Rechazar y solicitar nuevo comprobante'],['cancelled','Cancelar pago']]:[['cancelled','Cancelar pago']])+
@@ -149,7 +164,7 @@ window.AmaruCommercial=function(ctx){
     check('confirmed','Confirmo esta decisión y sus efectos sobre la reserva.'),'Registrar revisión'));
   body+=panel('Historial de revisión',table(['Fecha','Estado','Observaciones'],p.history.map(r=>[esc(date(r.created_at)),esc(paymentStates.find(([key])=>key===r.state)?.[1]||r.state),esc(r.observations)])));
   if(modal)dialog('Pago mediante transferencia bancaria',body);
-  else screen.innerHTML=head('Pago mediante transferencia bancaria')+link('Volver a pagos','pagos.html')+body;
+  else screen.innerHTML=head(checkout?'Finalizar compra':'Pago mediante transferencia bancaria','Transferencia simulada y revisión del comprobante.')+actionBar(link(checkout?'Volver a mi carrito':'Volver a pagos',checkout?'carrito.html':'pagos.html')+link('Mis pedidos','consulta.html'))+body;
  }
  async function bankForm(){
   const data=await api('transfer-configuration/');
@@ -200,8 +215,8 @@ window.AmaruCommercial=function(ctx){
     close();location.reload();return;
    }else if(kind==='commerce-voucher'){
     const file=f.elements.file.files[0];if(file.size>5*1024*1024)throw new Error('El archivo supera el límite de 5 MB.');
-    const body=new FormData(f);body.delete('id');await api('payments/'+data.id+'/voucher/',{method:'POST',body});
-    await paymentDetail(data.id,false);message('Comprobante recibido. Queda pendiente de revisión.');return;
+    const body=new FormData(f);body.delete('id');body.delete('checkout');await api('payments/'+data.id+'/voucher/',{method:'POST',body});
+    await paymentDetail(data.id,false,data.checkout==='1');message('Comprobante recibido. Queda pendiente de revisión.');return;
    }else if(kind==='commerce-review'){
     if(!data.confirmed)throw new Error('Confirma la decisión antes de continuar.');
     delete data.confirmed;if(!data.voucher)delete data.voucher;data.bank_checked=!!data.bank_checked;
@@ -223,6 +238,7 @@ window.AmaruCommercial=function(ctx){
    case 'commerce-move':{const [pk,view]=id.split(':');await movementForm(pk,view);break;}
    case 'commerce-bank':await bankForm();break;
    case 'commerce-confirm-payment':await confirmForm(id);break;
+   case 'commerce-review-choice':{const f=screen.querySelector('[data-form=commerce-review]');f.elements.state.value=id;f.elements.observations.focus();f.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});break;}
    case 'commerce-cancel-order':dialog('Cancelar orden',note('Libera las reservas de la orden. Si existe un pago aprobado, se conserva su historial y la administración debe revisar su devolución.')+
     form('commerce-cancel-order',hidden('id',id)+input('reason','Motivo de cancelación','text','','required minlength="5" maxlength="240"')+check('confirmed','Confirmo la cancelación de esta orden.'),'Cancelar orden'));break;
    case 'commerce-copy':await navigator.clipboard.writeText(id);message('Dato copiado.');break;
@@ -236,5 +252,5 @@ window.AmaruCommercial=function(ctx){
   preview.textContent=file.name+' · '+(file.size/1024).toFixed(0)+' KB';
   if(['image/jpeg','image/png'].includes(file.type)&&file.size<=5*1024*1024){const img=document.createElement('img');img.alt='Vista previa del comprobante seleccionado';img.src=URL.createObjectURL(file);img.onload=()=>URL.revokeObjectURL(img.src);preview.append(img);}
  });
- return {benefitsPage,inventoryPage,paymentsPage,submit,click};
+ return {benefitsPage,inventoryPage,paymentsPage,checkoutPage,checkoutSteps,myPayments,submit,click};
 };

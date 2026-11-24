@@ -412,7 +412,7 @@ def payment_rows(user):
 def payment_summary(payment):
     q = payment.quote
     order = getattr(q, 'order', None)
-    return {'id': payment.pk, 'reference': str(payment.reference), 'quote': q.pk, 'folio': q.folio,
+    return {'id': payment.pk, 'reference': str(payment.reference), 'quote': q.pk, 'folio': q.folio, 'method': 'transferencia',
         'client_name': q.client.name, 'rut': q.client.rut, 'agreement': q.agreement.name if q.agreement else None,
         'amount': str(payment.amount), 'original_amount': str(q.original_amount or q.amount),
         'benefit': q.benefit_snapshot, 'state': payment.state, 'state_label': payment.get_state_display(),
@@ -481,20 +481,32 @@ def confirm_payment(request, pk):
         raise ValidationError('Revisa y confirma una receta vigente del cliente.')
     if request.data.get('confirmed') is not True:
         raise ValidationError('Confirma precios, disponibilidad y condiciones antes de solicitar el pago.')
+    return private(payment_summary(create_payment(q, request.user)), status=201)
+
+
+def create_payment(q, user, *, expected_amount=None):
+    """Se invoca dentro de una transacción con la cotización bloqueada y validada."""
+    existing = TransferPayment.objects.filter(quote=q).first()
+    if existing:
+        return existing
+    lines = list(q.lines.select_related('product'))
     original, final, snapshot = benefits.calculate(q.client, [{'product': l.product, 'price': l.unit_price, 'quantity': l.quantity} for l in lines])
+    if expected_amount is not None and final != expected_amount:
+        from .purchases import Conflict
+        raise Conflict('El precio o beneficio cambió. Actualiza el carrito y confirma el nuevo total.')
     if final <= 0:
         raise ValidationError('El total no requiere una transferencia. Solicita una revisión administrativa del beneficio.')
     q.original_amount, q.amount, q.benefit_snapshot = original, final, snapshot
-    q.confirmed_at, q.confirmed_by = timezone.now(), request.user
+    q.confirmed_at, q.confirmed_by = timezone.now(), user
     q.save(update_fields=['original_amount', 'amount', 'benefit_snapshot', 'confirmed_at', 'confirmed_by', 'updated_at'])
-    stock.reserve_quote(q, request.user)
+    stock.reserve_quote(q, user)
     config, _ = TransferConfiguration.objects.get_or_create(pk=1)
     bank = BankSerializer(config).data
     # Campos operativos quedan preparados en configuración; la demostración entrega datos inoperativos.
     bank.update(bank='Banco ficticio · SIN OPERACIÓN', account_number='DEMO-NO-OPERATIVA', holder_rut='DEMO-SIN-RUT-BANCARIO')
     payment = TransferPayment.objects.create(quote=q, amount=final, bank_snapshot=dict(bank))
-    audit(request.user, 'Monto confirmado y transferencia académica solicitada', payment)
-    return private(payment_summary(payment), status=201)
+    audit(user, 'Monto confirmado y transferencia académica solicitada', payment)
+    return payment
 
 
 class VoucherInput(serializers.Serializer):

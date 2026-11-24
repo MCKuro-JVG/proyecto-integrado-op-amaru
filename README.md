@@ -162,11 +162,13 @@ Con MariaDB y usuario de migraciones:
 
 ```powershell
 $env:AMARU_ENV_FILE = "$PWD\amaru\.env.migrations"
+$env:R2_ENABLED = 'False'
 .\.venv\Scripts\python.exe amaru\manage.py test gestion --noinput
 Remove-Item Env:AMARU_ENV_FILE
+Remove-Item Env:R2_ENABLED
 ```
 
-Las pruebas crean y destruyen **test_opticas_amaru**, nunca la base principal. Reservar ese nombre exclusivamente para pruebas. Los archivos de prueba se escriben en directorios temporales. El modo aislado sin MariaDB es `--settings=config.test_settings`; no demuestra funcionamiento de MariaDB. Las pruebas de firma de URL con credenciales ficticias son verificaciones locales y no sustituyen `verify_r2` contra Cloudflare.
+Las pruebas crean y destruyen **test_opticas_amaru**, nunca la base principal. Reservar ese nombre exclusivamente para pruebas. Se ejecutan con R2 desactivado y archivos temporales locales para evitar subir documentos de prueba a un bucket real. Las pruebas específicas de R2 utilizan sus propias simulaciones. El modo aislado sin MariaDB es `--settings=config.test_settings`; no demuestra funcionamiento de MariaDB. Las pruebas de firma de URL con credenciales ficticias son verificaciones locales y no sustituyen `verify_r2` contra Cloudflare.
 
 ## Git y trabajo grupal
 
@@ -225,3 +227,6 @@ Ver [preparación de WSGI, MariaDB y HTTPS](deploy/alwaysdata/README.md). El per
 La ampliación de noviembre agrega beneficios administrables por convenio, transferencias ficticias con comprobantes privados y revisión manual, e inventario con variantes, marcas, modelos, categorías, proveedores, reservas y Kardex. Los accesos son `/app/beneficios.html`, `/app/mis_beneficios.html`, `/app/pagos.html` y `/app/inventario.html`. El registro sindical muestra errores recuperables y actualiza su listado después de guardar.
 
 Consulta [el proceso, las tablas, los permisos y la demostración](docs/COMERCIO_INVENTARIO.md). Los pagos permanecen en modo académico con datos bancarios inoperativos. La autorización de condiciones comerciales y operaciones reales corresponde a Ópticas Amaru.
+# Checkout académico desde el carrito
+
+El recorrido de compra y comprobante está integrado en **Mi carrito → Continuar al pago → Transferencia bancaria → Enviar comprobante de pago**. Los productos requieren precio habilitado y stock; las recetas y precios pendientes mantienen la revisión del personal. Consulta [el proceso, permisos y pruebas](docs/CHECKOUT_ACADEMICO.md). La transferencia es exclusivamente simulada y los datos bancarios son inoperativos.

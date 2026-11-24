@@ -47,8 +47,10 @@ class ProductSerializer(serializers.ModelSerializer):
     image=serializers.ImageField(write_only=True,required=False)
     class Meta:
         model=Product
-        fields=['id','sku','name','category','description','lens_type','variants','crystal','treatments','color','reference_price','requires_prescription','image','image_url','active','mining_only','brand','model','stock_category','stock_category_name','material']
+        fields=['id','sku','name','category','description','lens_type','variants','crystal','treatments','color','reference_price','direct_checkout','requires_prescription','image','image_url','active','mining_only','brand','model','stock_category','stock_category_name','material']
     def validate(self, data):
+        if data.get('direct_checkout', getattr(self.instance, 'direct_checkout', False)) and not data.get('reference_price', getattr(self.instance, 'reference_price', None)):
+            raise serializers.ValidationError({'reference_price': 'Configura un precio positivo antes de habilitar el checkout.'})
         model = data.get('model', getattr(self.instance,'model',None))
         brand = data.get('brand', getattr(self.instance,'brand',None))
         if model and model.brand_id != getattr(brand,'pk',None):

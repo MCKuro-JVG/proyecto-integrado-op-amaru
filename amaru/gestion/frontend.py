@@ -13,8 +13,8 @@ def interface(request,page='index.html'):
     if page in {'registro.html','privacidad.html'} and getattr(settings,'ATTENTION_PUBLIC_ONLY',False): raise Http404
     html=path.read_text(encoding='utf-8')
     html=re.sub(r'<script src="js/(?:storage|app)\.js[^\"]*" defer></script>','',html)
-    html=html.replace('</head>','<script src="/static/commercial.js?v=c79b7f6b9672" defer></script></head>')
-    html=html.replace('</head>','<link rel="stylesheet" href="/static/attention.css?v=515c69e71a50">'+'<script src="/static/server.js?v=2e17caccb6ed" defer></script></head>')
+    html=html.replace('</head>','<script src="/static/commercial.js?v=cb343fc3783b" defer></script></head>')
+    html=html.replace('</head>','<link rel="stylesheet" href="/static/attention.css?v=515c69e71a50">'+'<script src="/static/server.js?v=fcb987098dac" defer></script></head>')
     html=re.sub(r'(href|src)="((?:css|img|js)/)',r'\1="/static/interfaz/\2',html)
     html=re.sub(r'<div class="demo-banner">.*?</div>','<div class="demo-banner">APLICACIÓN ACADÉMICA · Datos en el servidor · Sin envíos de correo o mensajes · Use datos ficticios</div>',html)
     html=re.sub(r'bootstrap\.js\?v=[a-z0-9]+', 'bootstrap.js?v=async1', html)
