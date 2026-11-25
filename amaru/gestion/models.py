@@ -332,7 +332,9 @@ class Inquiry(models.Model):
     prescription = models.ForeignKey(Prescription, on_delete=models.PROTECT, null=True, blank=True)
     agreement = models.ForeignKey(Agreement, on_delete=models.PROTECT, null=True, blank=True)
     agreement_role = models.CharField(max_length=10, choices=[("titular", "Titular"), ("carga", "Carga familiar")], blank=True)
-    verification_state = models.CharField(max_length=12, choices=[("pendiente", "Pendiente"), ("aprobada", "Aprobada"), ("rechazada", "Rechazada")], blank=True)
+    verification_state = models.CharField(max_length=12, choices=[
+        ('pendiente', 'Pendiente'), ('aprobada', 'Aprobada'), ('rechazada', 'Rechazada'), ('inactiva', 'Inactiva')],
+        blank=True)
     verification_method = models.CharField(max_length=12, blank=True)
     verification_note = models.CharField(max_length=500, blank=True)
     verified_at = models.DateTimeField(null=True, blank=True)

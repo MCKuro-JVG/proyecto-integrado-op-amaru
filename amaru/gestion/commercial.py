@@ -20,6 +20,7 @@ from reportlab.graphics.barcode import createBarcodeDrawing
 from reportlab.pdfgen import canvas
 from .api import Records
 from .catalog_requests import own_client
+from .date_filters import filter_created_dates
 from .models import (AgreementBenefit, Brand, Inventory, Order, PaymentReview, PaymentVoucher, Product,
                      ProductModel, ProductVariant, Quote, StockCategory, StockMovement, StockReservation,
                      Supplier, TransferConfiguration, TransferPayment)
@@ -187,6 +188,12 @@ class StockSerializer(serializers.ModelSerializer):
     sku = serializers.CharField(source='variant.sku', read_only=True, default='')
     barcode = serializers.CharField(source='variant.barcode', read_only=True, default='')
     product_name = serializers.CharField(source='variant.product.name', read_only=True, default='')
+    product_id = serializers.IntegerField(source='variant.product_id', read_only=True, default=None)
+    variant_label = serializers.CharField(source='variant.label', read_only=True, default='')
+    color = serializers.CharField(source='variant.color', read_only=True, default='')
+    size = serializers.CharField(source='variant.size', read_only=True, default='')
+    sale_price = serializers.DecimalField(source='variant.product.reference_price', max_digits=12,
+                                          decimal_places=0, read_only=True, default=None, allow_null=True)
     brand_name = serializers.CharField(source='variant.product.brand.name', read_only=True, default='')
     model_name = serializers.CharField(source='variant.product.model.name', read_only=True, default='')
     category_name = serializers.CharField(source='variant.product.stock_category.name', read_only=True, default='')
@@ -198,7 +205,8 @@ class StockSerializer(serializers.ModelSerializer):
     class Meta:
         model = Inventory
         fields = ['id', 'name', 'category', 'variant', 'quantity', 'minimum', 'location', 'unit_cost', 'notes',
-                  'sku', 'barcode', 'product_name', 'brand_name', 'model_name', 'category_name', 'supplier_name', 'reserved', 'available', 'active']
+                  'sku', 'barcode', 'product_id', 'product_name', 'variant_label', 'color', 'size', 'sale_price',
+                  'brand_name', 'model_name', 'category_name', 'supplier_name', 'reserved', 'available', 'active']
         read_only_fields = ['name', 'category', 'variant', 'quantity']
 
     def get_reserved(self, obj):
@@ -259,13 +267,13 @@ class Stocks(Records):
                      | Q(variant__product__name__icontains=q) | Q(variant__product__brand__name__icontains=q)
                      | Q(variant__product__model__name__icontains=q) | Q(variant__product__stock_category__name__icontains=q)
                      | Q(variant__supplier__name__icontains=q))
-            if q.isdecimal():
-                query |= Q(pk=int(q))
+            if q.isascii() and q.isdecimal() and len(q) <= 18:
+                query |= Q(pk=int(q)) | Q(variant__product_id=int(q))
             rows = rows.filter(query)
         for key, column in [('brand', 'variant__product__brand_id'), ('category_id', 'variant__product__stock_category_id'), ('supplier', 'variant__supplier_id')]:
             value = filters.get(key, '')
             if value.isdecimal():
-                rows = rows.filter(**{column: int(value)})
+                rows = rows.filter(**{column: int(value)}) if len(value) <= 18 else rows.none()
         if filters.get('active') in ('true', 'false'):
             rows = rows.filter(variant__active=filters['active'] == 'true')
         from django.db.models import OuterRef, Subquery, IntegerField, Value, F
@@ -360,19 +368,13 @@ class Movements(Records):
 
     def get_queryset(self):
         rows = super().get_queryset()
-        for param, field in [('item', 'inventory_id'), ('kind', 'kind'), ('desde', 'created_at__date__gte'), ('hasta', 'created_at__date__lte')]:
+        for param, field in [('item', 'inventory_id'), ('kind', 'kind')]:
             value = self.request.query_params.get(param)
             if value:
-                if param in ('desde', 'hasta'):
-                    from datetime import date
-                    try:
-                        value = date.fromisoformat(value)
-                    except ValueError:
-                        raise ValidationError('Fecha de movimiento inválida.') from None
-                if param == 'item' and not value.isdecimal():
+                if param == 'item' and (not value.isdecimal() or len(value)>18):
                     raise ValidationError('Artículo inválido.')
                 rows = rows.filter(**{field: value})
-        return rows
+        return filter_created_dates(rows, self.request.query_params)
 
 
 class BankSerializer(serializers.ModelSerializer):
@@ -419,7 +421,7 @@ def payment_summary(payment):
         'created_at': payment.created_at, 'bank': payment.bank_snapshot, 'academic': True,
         'order': {'folio': order.folio, 'state': order.status} if order else None,
         'items': [{'name': line.product_name or line.product.name, 'variant': line.variant,
-                   'quantity': line.quantity, 'unit_price': str(line.unit_price)} for line in q.lines.select_related('product')],
+                   'quantity': line.quantity, 'unit_price': str(line.unit_price)} for line in q.lines.all()],
         'vouchers': [{'id': v.pk, 'declared_amount': str(v.declared_amount), 'created_at': v.created_at,
                       'url': f'/api/payment-vouchers/{v.pk}/file/'} for v in payment.vouchers.all()],
         'history': [{'before': r.before, 'state': r.after, 'observations': r.observations, 'created_at': r.created_at} for r in payment.reviews.all()]}
@@ -438,19 +440,17 @@ def payments(request):
         except ModelValidationError:
             raise ValidationError('El RUT no es válido.') from None
     if query.get('folio'):
-        match = re.fullmatch(r'COT-([0-9]{6,18})(?:-[0-9A-F]{12})?', query['folio'].upper())
+        match = re.fullmatch(r'(COT|OT)-([0-9]{6,18})(?:-([0-9A-F]{12}))?', query['folio'].strip().upper())
         if not match:
-            raise ValidationError('Utiliza el folio COT de la cotización.')
-        rows = rows.filter(quote_id=int(match[1]))
+            raise ValidationError('Utiliza un folio COT de cotización u OT de pedido.')
+        prefix, number, token = match.groups()
+        field = 'quote' if prefix == 'COT' else 'quote__order'
+        rows = rows.filter(**{field+'__pk': int(number)})
+        if token:
+            rows = rows.filter(**{field+'__token__istartswith': token})
     if query.get('state'):
         rows = rows.filter(state=query['state'])
-    for key, field in [('desde', 'created_at__date__gte'), ('hasta', 'created_at__date__lte')]:
-        if query.get(key):
-            from datetime import date
-            try:
-                rows = rows.filter(**{field: date.fromisoformat(query[key])})
-            except ValueError:
-                raise ValidationError('La fecha no es válida.') from None
+    rows = filter_created_dates(rows, query)
     pagination = PageNumberPagination()
     selected = pagination.paginate_queryset(rows, request)
     return pagination.get_paginated_response([payment_summary(p) for p in selected])
@@ -534,16 +534,21 @@ def submit_voucher(request, pk):
             ref = get_object_or_404(TransferPayment, pk=pk, quote__client=client)
             q = Quote.objects.select_for_update().get(pk=ref.quote_id)
             payment = TransferPayment.objects.select_for_update().get(pk=pk)
-            if payment.state not in ('pending', 'rejected'):
-                raise ValidationError('El pago ya tiene un comprobante pendiente o está cerrado.')
-            stock.reserve_quote(q, request.user)
             upload = form.validated_data['file']
             digest = hashlib.sha256()
             for chunk in upload.chunks():
                 digest.update(chunk)
             upload.seek(0)
-            if payment.vouchers.filter(sha256=digest.hexdigest()).exists():
+            previous = payment.vouchers.filter(sha256=digest.hexdigest()).first()
+            if (previous and payment.state in ('submitted', 'review')
+                    and previous.declared_amount == form.validated_data['declared_amount']
+                    and previous.pk == payment.vouchers.order_by('-pk').values_list('pk', flat=True).first()):
+                return private(payment_summary(payment))
+            if payment.state not in ('pending', 'rejected'):
+                raise ValidationError('El pago ya tiene un comprobante pendiente o está cerrado.')
+            if previous:
                 raise ValidationError('Este comprobante ya fue enviado. Selecciona un archivo corregido.')
+            stock.reserve_quote(q, request.user)
             voucher = PaymentVoucher(payment=payment, declared_amount=form.validated_data['declared_amount'], sha256=digest.hexdigest(), submitted_by=request.user)
             voucher.file.save(upload.name, upload, save=False)
             saved = voucher.file
@@ -566,8 +571,14 @@ def voucher_file(request, pk):
     audit(request.user, 'Consulta autorizada de comprobante bancario', voucher)
     suffix = Path(voucher.file.name).suffix.lower()
     content_type = {'.pdf': 'application/pdf', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg'}[suffix]
-    response = FileResponse(voucher.file.open('rb'), as_attachment=True, filename='comprobante-academico'+suffix, content_type=content_type)
+    preview = request.query_params.get('vista') == '1'
+    response = FileResponse(voucher.file.open('rb'), as_attachment=not preview,
+                            filename='comprobante-academico'+suffix, content_type=content_type)
     response['Cache-Control'] = 'private, no-store'
+    response['X-Content-Type-Options'] = 'nosniff'
+    response['Referrer-Policy'] = 'no-referrer'
+    if preview:
+        response['Content-Security-Policy'] = "default-src 'none'; frame-ancestors 'none'; form-action 'none'"
     return response
 
 

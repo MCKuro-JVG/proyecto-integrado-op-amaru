@@ -5,7 +5,7 @@ window.AmaruCommercial=function(ctx){
  const hidden=(name,value)=>`<input type="hidden" name="${name}" value="${esc(value)}">`;
  const paymentStates=[['','Todos'],['pending','Pendiente de pago'],['submitted','Comprobante enviado'],['review','En revisión'],['approved','Pago aprobado'],['rejected','Pago rechazado'],['cancelled','Cancelado']];
  const benefitTypes=[['percent','Descuento porcentual'],['fixed','Descuento fijo'],['price','Precio preferencial unitario'],['catalog','Catálogo exclusivo'],['mining','Lentes mineros'],['family','Cargas familiares'],['evaluation','Evaluación visual'],['contribution','Aporte de organización'],['other','Otro']];
- const tabs=[['resumen','Resumen'],['productos','Productos y variantes'],['brands','Marcas'],['product-models','Modelos'],['stock-categories','Categorías'],['suppliers','Proveedores'],['entry','Entradas'],['exit','Salidas'],['adjustment','Ajustes'],['historial','Kardex'],['alertas','Alertas'],['reportes','Reportes']];
+ const tabs=[['resumen','Resumen'],['productos','Productos'],['variantes','Variantes'],['brands','Marcas'],['product-models','Modelos'],['stock-categories','Categorías'],['suppliers','Proveedores'],['entry','Entradas'],['exit','Salidas'],['adjustment','Ajustes'],['historial','Kardex'],['alertas','Alertas'],['reportes','Reportes']];
  const managed={brands:['Marcas','brand'], 'product-models':['Modelos','productmodel'], 'stock-categories':['Categorías','stockcategory'],suppliers:['Proveedores','supplier']};
  const chosen=(key)=>params.get(key)||'';
  let currentPayment=null;
@@ -14,8 +14,9 @@ window.AmaruCommercial=function(ctx){
  async function myPayments(){
   const data=await api('payments/');
   return panel('Mis compras y pagos',note('El comprobante se revisa antes de aprobar el pago. Puedes retomar aquí un pago iniciado desde el carrito.')+
-   table(['Folio / Productos','Total','Estado del pedido','Estado del pago','Observaciones','Acciones'],data.results.map(p=>[
-    esc(p.folio)+'<br>'+p.items.map(i=>esc(i.name)+' × '+i.quantity).join('<br>'),currency(p.amount),esc(p.order?p.order.folio+' · '+p.order.state:'Pendiente de aprobación del pago'),esc(p.state_label),esc(p.history.at(-1)?.observations||'Sin observaciones'),link('Ver pago y comprobantes','carrito.html?pago='+p.id)]))+
+   table(['Folio / Productos','Fecha','Total','Estado del pedido','Estado del pago','Observaciones','Acciones'],data.results.map(p=>[
+    esc(p.folio)+'<br>'+p.items.map(i=>esc(i.name)+' × '+i.quantity).join('<br>'),esc(date(p.created_at)),currency(p.amount),esc(p.order?p.order.folio+' · '+p.order.state:'Pendiente de aprobación del pago'),esc(p.state_label),esc(p.history.at(-1)?.observations||'Sin observaciones'),
+    link('Ver pago y comprobantes','carrito.html?pago='+p.id)+(p.vouchers.length?link('Descargar último comprobante',p.vouchers.at(-1).url):'')]))+
    (data.next?link('Ver todos mis pagos','pagos.html'):''));
  }
  const options=rows=>rows.map(r=>[r.id,r.name]);
@@ -54,7 +55,7 @@ window.AmaruCommercial=function(ctx){
  async function inventoryPage(){
   const view=chosen('vista')||'resumen';
   screen.innerHTML=head('Inventario','Administra existencias, variantes y movimientos registrados.')+
-   '<nav class="actions inventory-tabs" aria-label="Secciones de inventario">'+tabs.map(([v,l])=>`<a class="button soft" ${view===v?'aria-current="page"':''} href="inventario.html?vista=${v}">${l}</a>`).join('')+'</nav>';
+   '<nav class="actions inventory-tabs" aria-label="Secciones de inventario">'+tabs.filter(([v])=>v!=='productos'||has('view_product')).map(([v,l])=>`<a class="button soft" ${view===v?'aria-current="page"':''} href="inventario.html?vista=${v}">${l}</a>`).join('')+'</nav>';
   if(managed[view]){
    const [title,model]=managed[view],data=await list(view+'/');
    screen.innerHTML+=panel(title,(has('add_'+model)?btn('Crear '+title.toLowerCase(),'commerce-master-new',view):'')+
@@ -79,15 +80,27 @@ window.AmaruCommercial=function(ctx){
   if(view==='reportes'){
    screen.innerHTML+=panel('Reportes de existencias',link('Descargar inventario CSV','/api/stock/report/')+link('Consultar Kardex','inventario.html?vista=historial')+note('El CSV muestra existencias físicas, reservadas, disponibles y mínimas.'));return;
   }
+  if(view==='productos'&&has('view_product')){
+   const data=await list('catalog-management/?'+new URLSearchParams({q:chosen('q')}));
+   screen.innerHTML+=panel('Productos del catálogo',
+    form('commerce-stock-search',hidden('vista','productos')+input('q','Nombre o SKU del producto','search',chosen('q'),''),'Buscar productos')+
+    actionBar(link('Administrar catálogo','catalogo.html?gestion=1')+link('Ver variantes','inventario.html?vista=variantes'))+
+    table(['ID','Producto','SKU','Marca','Modelo','Precio de venta','Estado'],data.results.map(p=>[
+     p.id,esc(p.name),esc(p.sku),esc(p.brand_name||'—'),esc(p.model_name||'—'),p.reference_price==null?'Por confirmar':currency(p.reference_price),
+     p.active?'Activo':'Inactivo'])))+pages(data);return;
+  }
   const query=new URLSearchParams([...params].filter(([k])=>['q','stock','active','brand','category_id','supplier'].includes(k)));
   if(view==='alertas'&&!query.get('stock'))query.set('stock','low');
   const [data,brands,categories,suppliers]=await Promise.all([list('stock/?'+query),api('brands/'),api('stock-categories/'),api('suppliers/')]);
   screen.innerHTML+=panel('Buscar existencias',controls(brands.results,categories.results,suppliers.results)+(view==='alertas'?link('Ver agotados','inventario.html?vista=alertas&stock=empty'):'')+link('Limpiar filtros','inventario.html?vista='+view));
-  if(view==='productos')screen.innerHTML+=actionBar(link('Administrar catálogo','catalogo.html?gestion=1')+(has('add_productvariant')?btn('Crear variante inventariable','commerce-variant-new'):''));
+  if(view==='variantes')screen.innerHTML+=actionBar((has('view_product')?link('Administrar catálogo','catalogo.html?gestion=1'):'')+(has('add_productvariant')?btn('Crear variante inventariable','commerce-variant-new'):''));
   const canMove=has('add_stockmovement');
-  screen.innerHTML+=panel('Existencias',table(['Producto / SKU / Código','Marca / Modelo','Categoría / Proveedor','Físico','Reservado','Disponible','Mínimo','Estado','Acciones'],data.results.map(r=>[
-   esc(r.name)+'<br><small>'+esc(r.sku||'Artículo histórico')+' · '+esc(r.barcode||'Sin código')+'</small>',
-   esc([r.brand_name,r.model_name].filter(Boolean).join(' · ')),esc([r.category_name,r.supplier_name].filter(Boolean).join(' · ')),r.quantity,r.reserved,r.available,r.minimum,
+  screen.innerHTML+=panel('Existencias',table(['Identificadores','Producto / Variante','Marca / Modelo','Categoría / Proveedor','Ubicación / Precios','Físico','Reservado','Disponible','Mínimo','Estado','Acciones'],data.results.map(r=>[
+   'Artículo '+r.id+(r.product_id?' · Producto '+r.product_id:'')+'<br>SKU '+esc(r.sku||'—')+'<br>Barras '+esc(r.barcode||'—'),
+   esc(r.product_name||r.name)+'<br><small>'+esc([r.variant_label,r.color,r.size].filter(Boolean).join(' · '))+'</small>',
+   esc([r.brand_name,r.model_name].filter(Boolean).join(' · ')),esc([r.category_name,r.supplier_name].filter(Boolean).join(' · ')),
+   esc(r.location||'—')+'<br>'+ (r.sale_price==null?'Precio por confirmar':'Venta '+currency(r.sale_price))+
+    (r.unit_cost!=null?'<br>Costo '+currency(r.unit_cost):''),r.quantity,r.reserved,r.available,r.minimum,
    !r.active?'Inactivo':r.available===0?'Agotado':r.available<=r.minimum?'Stock bajo':'Disponible',
    actionBar((canMove?btn(['entry','exit','adjustment'].includes(view)?{entry:'Registrar entrada',exit:'Registrar salida',adjustment:'Ajustar stock'}[view]:'Registrar movimiento','commerce-move',r.id+':'+view):'')+
     (has('change_inventory')?btn('Configurar','commerce-stock-config',r.id):'')+
@@ -129,11 +142,22 @@ window.AmaruCommercial=function(ctx){
   if(params.get('pago')){await paymentDetail(params.get('pago'),false);return;}
   const query=new URLSearchParams([...params].filter(([k])=>['q','rut','folio','desde','hasta','state'].includes(k)));
   const data=await list('payments/?'+query);
+  if(!has('view_transferpayment')){
+   screen.innerHTML=head('Mis pagos','Consulta cada compra, sus comprobantes y el estado de revisión.')+
+    link('Seguir comprando','catalogo.html')+panel('Historial de compras',table(
+     ['Folio / Productos','Fecha','Total','Pedido','Pago','Observaciones','Comprobantes'],data.results.map(p=>[
+      esc(p.folio)+'<br>'+p.items.map(item=>esc(item.name)+' × '+item.quantity).join('<br>'),
+      esc(date(p.created_at)),currency(p.amount),esc(p.order?.state||'Pendiente de aprobación'),
+      esc(p.state_label),esc(p.history.at(-1)?.observations||'—'),
+      link('Ver pago y comprobantes','carrito.html?pago='+p.id)+
+       (p.vouchers.length?link('Descargar último comprobante',p.vouchers.at(-1).url):'')])) )+pages(data);
+   return;
+  }
   screen.innerHTML=head(has('view_transferpayment')?'Pagos y comprobantes':'Mis pagos','DEMOSTRACIÓN ACADÉMICA — No realizar transferencias reales.')+
    note('El pago queda disponible cuando la óptica confirma precio, disponibilidad y receta. La fabricación y la entrega mantienen su propio estado.')+
    (has('change_transferconfiguration')?btn('Configurar transferencia y reservas','commerce-bank'):'')+
    panel('Buscar pagos',form('commerce-payment-search',input('q','Nombre o referencia de pago','search',chosen('q'),'')+input('rut','RUT del cliente','text',chosen('rut'),'')+
-    input('folio','Folio de cotización','text',chosen('folio'),'')+input('desde','Fecha desde','date',chosen('desde'),'')+input('hasta','Fecha hasta','date',chosen('hasta'),'')+
+    input('folio','Folio de cotización o pedido','text',chosen('folio'),'')+input('desde','Fecha desde','date',chosen('desde'),'')+input('hasta','Fecha hasta','date',chosen('hasta'),'')+
     select('state','Estado',paymentStates,chosen('state')),'Buscar')+link('Limpiar filtros','pagos.html'))+
    panel('Pagos registrados',table(['Referencia / Cotización','Cliente / RUT','Convenio','Monto esperado','Declarado','Fecha','Estado','Acciones'],data.results.map(p=>[
     esc(p.reference)+'<br>'+esc(p.folio),esc(p.client_name)+'<br>'+esc(p.rut),esc(p.agreement||'Particular'),currency(p.amount),p.vouchers.length?currency(p.vouchers.at(-1).declared_amount):'—',
@@ -152,7 +176,10 @@ window.AmaruCommercial=function(ctx){
   if(p.state==='rejected')body+=note('La óptica solicitó un nuevo comprobante: '+(p.history.at(-1)?.observations||'Revisa el archivo y vuelve a enviarlo.'));
   body+=panel('Productos y pedido',table(['Producto','Variante','Cantidad','Precio unitario'],p.items.map(line=>[esc(line.name),esc(line.variant||'Modelo único'),line.quantity,currency(line.unit_price)]))+
    note(p.order?p.order.folio+' · '+p.order.state:'Pendiente de aprobación del pago y creación de la orden.'));
-  body+=panel('Comprobantes',table(['Fecha','Monto declarado','Archivo privado'],p.vouchers.map(v=>[esc(date(v.created_at)),currency(v.declared_amount),link('Descargar comprobante',v.url)])));
+  body+=panel('Comprobantes',table(['Fecha','Monto declarado','Archivo privado'],p.vouchers.map(v=>[
+   esc(date(v.created_at)),currency(v.declared_amount),actionBar(
+    '<a class="button soft" target="_blank" rel="noopener noreferrer" href="'+esc(v.url+'?vista=1')+'">Ver comprobante</a>'+
+    link('Descargar comprobante',v.url))])));
   if(!has('view_transferpayment')&&['pending','rejected'].includes(p.state))body+=panel('Subir comprobante de transferencia',form('commerce-voucher',hidden('id',id)+hidden('checkout',checkout?'1':'')+
    input('declared_amount','Monto declarado CLP','number',p.amount,'required min="0" step="1"')+
    input('file','Comprobante JPG, PNG o PDF (máximo 5 MB)','file','','required accept=".jpg,.jpeg,.png,.pdf"')+

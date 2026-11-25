@@ -95,7 +95,7 @@ class NovemberUpdateTests(TestCase):
         self.assertIsNone(self.owner.agreement_id)
         self.client.force_login(self.admin)
         self.assertEqual(self.post(f'/api/agreement-verifications/{inquiry.pk}/',approved=True,
-                                   method='presencial',note='Verificación ficticia').status_code,200)
+                                   method='presencial',note='Verificación ficticia',identity_verified=True).status_code,200)
         self.assertEqual(self.post(route, operation='revoke').status_code,200)
         agreement.refresh_from_db()
         self.assertIsNone(agreement.code)

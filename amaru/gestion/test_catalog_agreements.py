@@ -18,7 +18,7 @@ class CatalogAndAgreementTests(TestCase):
         cache.clear()
         self.product = Product.objects.create(sku="ACA-001", name="Cristal ficticio", category="cristal", requires_prescription=True)
         self.worker = User.objects.create_user("catalog_worker")
-        codes = ["view_product", "add_product", "change_product", "change_agreement", "view_agreement", "view_client", "view_inquiry"]
+        codes = ["view_product", "add_product", "change_product", "change_agreement", "view_agreement", "view_client", "change_client", "view_inquiry"]
         self.worker.user_permissions.add(*Permission.objects.filter(codename__in=codes))
         self.customer = User.objects.create_user("catalog_customer")
         self.owner = Client.objects.create(user=self.customer, rut="12345678-5", name="Ficha ficticia", phone="+56900000000", category="particular")
@@ -83,10 +83,13 @@ class CatalogAndAgreementTests(TestCase):
         self.assertIsNone(self.owner.agreement_id)
         self.assertEqual(inquiry.verification_state, "pendiente")
         url = f"/api/agreement-verifications/{inquiry.pk}/"
-        data = dict(approved=True, method="presencial", note="Verificación ficticia")
+        self.assertEqual(inquiry.origin, "manual_code")
+        self.assertIsNone(inquiry.client_id)
+        data = dict(approved=True, method="presencial", note="Verificación ficticia", identity_verified=True)
         self.client.force_login(self.customer)
         self.assertEqual(self.post(url, data).status_code, 403)
         self.client.force_login(self.worker)
+        self.assertEqual(self.post(url, {**data, "identity_verified": False}).status_code, 400)
         self.assertEqual(self.post(url, data).status_code, 200)
         self.assertEqual(self.post(url, data).status_code, 409)
         result = self.client.get(f"/api/clients/{self.owner.pk}/agreement/").json()

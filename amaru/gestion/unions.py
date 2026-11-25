@@ -345,14 +345,20 @@ def worker_access(user, *, lock=False):
 
 
 @api_view(['POST'])
-def create_worker(request):
+def create_worker(request, organization=None):
     form = WorkerInput(data=request.data)
     form.is_valid(raise_exception=True)
     values = form.validated_data
     values['email'] = values['email'].lower()
     try:
         with transaction.atomic():
-            union = worker_access(request.user, lock=True)
+            if organization is None:
+                union = worker_access(request.user, lock=True)
+            else:
+                admin_only(request.user)
+                union = get_object_or_404(Union.objects.select_for_update(), pk=organization)
+                if not agreement_open(union):
+                    raise PermissionDenied('Esta operación requiere un sindicato habilitado y vigente.')
             if values['role'] == 'carga' and not union.agreement.allow_dependents:
                 raise ValidationError('El convenio no permite cargas familiares.')
             if union.memberships.filter(Q(rut=values['rut']) | Q(email=values['email'])).exists():

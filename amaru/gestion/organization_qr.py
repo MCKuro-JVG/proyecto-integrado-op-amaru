@@ -8,6 +8,7 @@ from uuid import uuid4
 
 import qrcode
 from django.core import signing
+from django.core.exceptions import ValidationError as ModelValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
 from django.http import HttpResponse
@@ -21,10 +22,12 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
 from .attention import check_submission_rate, public_configuration
+from .date_filters import filter_created_dates
 from .models import Agreement, AgreementRepresentative, Client, Inquiry, Union, UnionMembership
 from .registration import PRIVACY_VERSION, RegistrationInput
 from .services import audit, receive_inquiry
 from .unions import private, safe_personal_user, worker_summary
+from .validators import normalize_rut
 
 PURPOSES = {'worker': 'Registro de trabajador asociado', 'inquiry': 'Consulta de convenio'}
 SALT = 'gestion.organization_qr.v1'
@@ -73,8 +76,24 @@ def qr_links(request, agreement):
         rows.append({'purpose': purpose, 'title': title, 'enabled': getattr(agreement, purpose + '_qr_enabled'),
             'url': base + '/app/' + route + '?' + urlencode({'qr': str(token)}) if base else None,
             'image_url': f'/api/organization-qrs/{agreement.pk}/{purpose}/image/?v={token}'})
+    today = timezone.localdate()
+    benefits = agreement.benefits.filter(active=True).filter(
+        Q(starts_on__isnull=True) | Q(starts_on__lte=today),
+        Q(ends_on__isnull=True) | Q(ends_on__gte=today))
+    staff = request.user.has_perm('gestion.change_agreement') and request.user.has_perm('gestion.view_inquiry')
     return {'id': agreement.pk, 'name': agreement.name, 'type': 'sindicato' if agreement.has_managed_union else 'convenio',
             'available': agreement.available, 'can_manage': can_manage(request.user, agreement),
+            'starts_on': agreement.starts_on, 'ends_on': agreement.ends_on,
+            'code': agreement.code if request.user.has_perm('gestion.view_agreement') else None,
+            'allow_dependents': agreement.allow_dependents, 'benefit_count': benefits.count() if agreement.available else 0,
+            'privacy_version': PRIVACY_VERSION,
+            'can_edit_workers': staff and not agreement.has_managed_union,
+            'can_manage_union_workers': agreement.has_managed_union and request.user.has_perm('gestion.change_union'),
+            'can_register_union_workers': agreement.has_managed_union and (
+                request.user.has_perm('gestion.change_union') or AgreementRepresentative.objects.filter(
+                    user=request.user, agreement=agreement, active=True).exists()),
+            'can_view_benefits': request.user.has_perm('gestion.view_agreementbenefit'),
+            'union_id': agreement.union.pk if agreement.has_managed_union else None,
             'can_read_inquiries': request.user.has_perm('gestion.view_inquiry'), 'codes': rows}
 
 
@@ -216,10 +235,6 @@ def register_worker(request, agreement, token):
         request.user, organization_qr={'purpose': 'worker', 'token': token})
     if not created:
         return inquiry, False
-    existing = Inquiry.objects.filter(agreement=agreement, kind='registro', registration_rut=data['rut'],
-        verification_state__in=['pendiente', 'aprobada']).exclude(pk=inquiry.pk)
-    if existing.exists():
-        raise Conflict('Ya existe una vinculación o solicitud para esos datos. Solicita su revisión sin volver a registrarte.')
     own = Client.objects.filter(rut=data['rut'], user=request.user, active=True).first() if request.user.is_authenticated and safe_personal_user(request.user) else None
     if own:
         inquiry.client = own
@@ -250,24 +265,100 @@ def register_query(request, agreement, token):
     return receive_inquiry(data, request.user, organization_qr={'purpose': 'inquiry', 'token': token})
 
 
-@api_view(['GET'])
+def filter_workers(rows, request, *, union=False):
+    rut_field = 'rut' if union else 'registration_rut'
+    search = request.query_params.get('q', '').strip()[:180]
+    if search:
+        try:
+            rut = normalize_rut(search)
+        except ModelValidationError:
+            rows = rows.filter(name__icontains=search)
+        else:
+            rows = rows.filter(Q(name__icontains=search) | Q(**{rut_field: rut}))
+    states = {'pending': ('pending',) if union else ('pendiente',),
+              'active': ('active',) if union else ('aprobada',),
+              'inactive': ('inactive',) if union else ('inactiva', 'rechazada')}
+    state = request.query_params.get('state', '')
+    if state:
+        if state not in states:
+            raise ValidationError('Selecciona un estado de afiliación válido.')
+        field = 'state__in' if union else 'verification_state__in'
+        rows = rows.filter(**{field: states[state]})
+    return filter_created_dates(rows, request.query_params)
+
+
+@api_view(['GET', 'POST'])
 def registrations(request, pk):
     agreement = authorized_organization(request.user, pk)
+    if request.method == 'POST':
+        if agreement.has_managed_union or not request.user.has_perms(
+                ['gestion.change_agreement', 'gestion.view_inquiry']):
+            raise PermissionDenied()
+        form = WorkerRegistration(data=request.data)
+        form.is_valid(raise_exception=True)
+        data = form.validated_data
+        row, created = receive_inquiry({
+            'kind': 'registro', 'source': 'web', 'name': data['name'], 'registration_rut': data['rut'],
+            'email': data['email'], 'phone': data['phone'], 'agreement_role': data['role'],
+            'agreement': agreement, 'service': 'Registro de trabajador asociado',
+            'reason': 'Registro administrativo para validar afiliación.', 'contact_authorized': True,
+            'privacy_version': PRIVACY_VERSION, 'idempotency_key': data['idempotency_key'],
+        }, request.user, staff_registration=True)
+        return private({'id': row.pk, 'state': row.verification_state}, 201 if created else 200)
     pagination = PageNumberPagination()
     if agreement.has_managed_union:
         rows = agreement.union.memberships.select_related('union__agreement', 'client__user').order_by('-pk')
         counts = rows.aggregate(total=Count('pk'), pending=Count('pk', filter=Q(state='pending')),
             active=Count('pk', filter=Q(state='active')), inactive=Count('pk', filter=Q(state='inactive')))
-        selected = [worker_summary(row) for row in pagination.paginate_queryset(rows, request)]
+        selected = [worker_summary(row) for row in pagination.paginate_queryset(filter_workers(rows, request, union=True), request)]
     else:
-        rows = Inquiry.objects.filter(agreement=agreement, kind='registro').exclude(verification_state='').order_by('-pk')
+        rows = Inquiry.objects.filter(agreement=agreement, kind='registro').exclude(
+            verification_state='').select_related('client__user').order_by('-pk')
         counts = rows.aggregate(total=Count('pk'), pending=Count('pk', filter=Q(verification_state='pendiente')),
-            active=Count('pk', filter=Q(verification_state='aprobada')), inactive=Count('pk', filter=Q(verification_state='rechazada')))
+            active=Count('pk', filter=Q(verification_state='aprobada')),
+            inactive=Count('pk', filter=Q(verification_state__in=('inactiva', 'rechazada'))))
+        page = pagination.paginate_queryset(filter_workers(rows, request), request)
         selected = [{'id': row.pk, 'name': row.name, 'rut': row.registration_rut, 'email': row.email, 'phone': row.phone,
             'role': row.agreement_role, 'state': row.verification_state, 'created_at': row.created_at,
-            'origin': row.origin, 'origin_label': row.get_origin_display(), 'client': row.client_id if request.user.has_perm('gestion.view_client') else None} for row in pagination.paginate_queryset(rows, request)]
+            'origin': row.origin, 'origin_label': row.get_origin_display(),
+            'account_state': 'Activa' if row.client and row.client.active and row.client.user and row.client.user.is_active
+                             else 'Sin acceso activo',
+            'client': row.client_id if request.user.has_perm('gestion.view_client') else None} for row in page]
     response = pagination.get_paginated_response(selected)
     response.data['counts'] = counts
     response.data['organization'] = agreement.name
     response['Cache-Control'] = 'private, no-store'
     return response
+
+
+@api_view(['POST'])
+@transaction.atomic
+def affiliation_state(request, pk, registration_id):
+    from .api import VerificationInput, review_membership
+    from .purchases import Conflict
+    if not request.user.has_perms(['gestion.change_agreement', 'gestion.view_inquiry']):
+        raise PermissionDenied()
+    if not isinstance(request.data, Mapping):
+        raise ValidationError('Selecciona una acción de afiliación válida.')
+    agreement = Agreement.objects.select_for_update().get(pk=authorized_organization(request.user, pk).pk)
+    if agreement.has_managed_union:
+        raise ValidationError('Gestiona esta afiliación desde el panel del sindicato.')
+    row = get_object_or_404(Inquiry.objects.select_for_update(), pk=registration_id, agreement=agreement, kind='registro')
+    if request.data.get('action') == 'reactivate':
+        form = VerificationInput(data={**request.data, 'approved': True})
+        form.is_valid(raise_exception=True)
+        if not form.validated_data['identity_verified']:
+            raise ValidationError('Confirma la verificación del titular.')
+        row = review_membership(request.user, row.pk, form.validated_data, agreement.pk, expected='inactiva')
+    elif request.data.get('action') == 'disable':
+        note = serializers.CharField(min_length=5, max_length=500).run_validation(request.data.get('note'))
+        if row.verification_state != 'aprobada':
+            raise Conflict('La afiliación debe estar activa para desactivarla.')
+        row.verification_state = 'inactiva'
+        row.verification_note = note
+        row.verified_by, row.verified_at = request.user, timezone.now()
+        row.save(update_fields=['verification_state', 'verification_note', 'verified_by', 'verified_at', 'updated_at'])
+        audit(request.user, 'Afiliación de convenio desactivada', row)
+    else:
+        raise ValidationError('Selecciona una acción de afiliación válida.')
+    return private({'id': row.pk, 'state': row.verification_state})

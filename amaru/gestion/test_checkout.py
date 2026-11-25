@@ -81,12 +81,32 @@ class CartCheckoutTests(TestCase):
         self.enable()
         agreement = self.approve_benefits()
         benefit = AgreementBenefit.objects.create(agreement=agreement, name='Beneficio ficticio', kind='percent', value=10, active=True)
+        self.client.force_login(self.owner)
+        product = self.client.get(f'/api/products/{self.product.pk}/').json()
+        self.assertEqual((product['catalog_price'], product['catalog_benefit'], product['availability']),
+                         ('9000', benefit.name, 'available'))
         result = self.checkout(self.payload(expected_amount='18000'))
         self.assertEqual(result.status_code, 201, result.content)
         self.assertEqual(result.json()['payment']['amount'], '18000')
         benefit.value = 90
         benefit.save()
         self.assertEqual(TransferPayment.objects.get().amount, 18000)
+
+    def test_identical_new_purchase_and_voucher_replay_are_independent(self):
+        self.enable()
+        first_data = self.payload()
+        first = self.checkout(first_data).json()['payment']
+        self.assertEqual(self.upload(first).status_code, 201)
+        self.assertEqual(self.upload(first).status_code, 200)
+        changed_amount = {**first_data, 'expected_amount': '1'}
+        self.assertEqual(self.checkout(changed_amount).status_code, 409)
+        second = self.checkout(self.payload()).json()['payment']
+        self.assertNotEqual(first['id'], second['id'])
+        self.assertNotEqual(first['folio'], second['folio'])
+        self.assertEqual(second['state'], 'pending')
+        self.assertEqual(self.upload(second).status_code, 201)
+        self.assertEqual(PaymentVoucher.objects.values('payment_id').distinct().count(), 2)
+        self.assertEqual(StockReservation.objects.count(), 2)
 
     def test_unavailable_stock_rolls_back_whole_checkout(self):
         self.enable()
@@ -128,8 +148,13 @@ class CartCheckoutTests(TestCase):
         self.assertEqual(download.status_code, 200)
         # El iterador del cliente Django cierra la respuesta y el archivo al agotarse.
         self.assertTrue(b''.join(download.streaming_content))
+        preview = self.client.get(url+'?vista=1')
+        self.assertIn('inline', preview['Content-Disposition'])
+        self.assertIn('no-store', preview['Cache-Control'])
+        preview.close()
         self.client.force_login(self.other)
         self.assertEqual(self.client.get(url).status_code, 404)
+        self.assertEqual(self.client.get(url+'?vista=1').status_code, 404)
         self.assertEqual(self.client.get(f'/api/payments/{payment["id"]}/').status_code, 404)
 
     def test_reviewed_purchase_can_resume_checkout_without_second_quote(self):

@@ -89,6 +89,35 @@ class OrganizationQRTests(TestCase):
         for suffix in ('', 'registrations/', 'worker/image/'):
             self.assertEqual(self.client.get(f'/api/organization-qrs/{self.agreement.pk}/'+suffix).status_code, 403)
 
+    def test_staff_roster_registration_filters_and_affiliation_lifecycle(self):
+        self.client.force_login(self.admin)
+        path = f'/api/organization-qrs/{self.traditional.pk}/registrations/'
+        data = worker_payload(self.traditional)
+        response = self.client.post(path, data, content_type='application/json')
+        self.assertEqual(response.status_code, 201, response.content)
+        pk = response.json()['id']
+        self.assertEqual(self.client.post(path, data, content_type='application/json').status_code, 200)
+        rows = self.client.get(path, {'q': '12.345.678-5', 'state': 'pending', 'desde': timezone.localdate()}).json()
+        self.assertEqual(rows['count'], 1)
+        self.assertEqual(rows['results'][0]['origin'], 'administrative')
+        self.assertEqual(self.client.get(path, {'state': 'active'}).json()['count'], 0)
+        self.assertFalse(Client.objects.exists())
+        verification = {'approved': True, 'method': 'presencial', 'identity_verified': True, 'note': 'Identidad ficticia comprobada'}
+        self.assertEqual(self.client.post(f'/api/agreement-verifications/{pk}/', verification,
+                                         content_type='application/json').status_code, 200)
+        self.assertEqual(self.client.get(path, {'state': 'active'}).json()['count'], 1)
+        state_path = path + f'{pk}/'
+        self.assertEqual(self.client.post(state_path, {**verification, 'action': 'disable'},
+                                         content_type='application/json').status_code, 200)
+        from .membership import verified_agreement
+        self.assertIsNone(verified_agreement(Client.objects.get()))
+        self.assertEqual(self.client.get(path, {'state': 'inactive'}).json()['count'], 1)
+        self.assertEqual(self.client.post(state_path, {**verification, 'action': 'reactivate'},
+                                         content_type='application/json').status_code, 200)
+        self.assertEqual(verified_agreement(Client.objects.get()), self.traditional)
+        self.client.force_login(self.rep)
+        self.assertEqual(self.client.get(path).status_code, 403)
+
     def test_representative_can_only_share_own_codes_and_cannot_rotate(self):
         self.client.force_login(self.rep)
         self.assertEqual(self.client.get(f'/api/organization-qrs/{self.agreement.pk}/').status_code, 200)

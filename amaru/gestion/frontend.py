@@ -13,9 +13,9 @@ def interface(request,page='index.html'):
     if page in {'registro.html','privacidad.html'} and getattr(settings,'ATTENTION_PUBLIC_ONLY',False): raise Http404
     html=path.read_text(encoding='utf-8')
     html=re.sub(r'<script src="js/(?:storage|app)\.js[^\"]*" defer></script>','',html)
-    html=html.replace('</head>','<script src="/static/organization_qr.js?v=dc3eeabd81a9" defer></script></head>')
-    html=html.replace('</head>','<script src="/static/commercial.js?v=8b3a3e30458d" defer></script></head>')
-    html=html.replace('</head>','<link rel="stylesheet" href="/static/attention.css?v=515c69e71a50">'+'<script src="/static/server.js?v=722eb260720d" defer></script></head>')
+    html=html.replace('</head>','<script src="/static/organization_qr.js?v=a588a8956986" defer></script></head>')
+    html=html.replace('</head>','<script src="/static/commercial.js?v=e5ad9bb5a9f0" defer></script></head>')
+    html=html.replace('</head>','<link rel="stylesheet" href="/static/attention.css?v=515c69e71a50">'+'<script src="/static/server.js?v=479dcdf75426" defer></script></head>')
     html=re.sub(r'(href|src)="((?:css|img|js)/)',r'\1="/static/interfaz/\2',html)
     html=re.sub(r'<div class="demo-banner">.*?</div>','<div class="demo-banner">APLICACIÓN ACADÉMICA · Datos en el servidor · Sin envíos de correo o mensajes · Use datos ficticios</div>',html)
     html=re.sub(r'bootstrap\.js\?v=[a-z0-9]+', 'bootstrap.js?v=async1', html)

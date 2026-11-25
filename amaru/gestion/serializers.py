@@ -43,11 +43,30 @@ class PrescriptionSerializer(serializers.ModelSerializer):
 
 class ProductSerializer(serializers.ModelSerializer):
     stock_category_name=serializers.CharField(source='stock_category.name',read_only=True,allow_null=True)
+    brand_name = serializers.CharField(source='brand.name', read_only=True, default='')
+    model_name = serializers.CharField(source='model.name', read_only=True, default='')
     image_url=serializers.SerializerMethodField()
     image=serializers.ImageField(write_only=True,required=False)
     class Meta:
         model=Product
-        fields=['id','sku','name','category','description','lens_type','variants','crystal','treatments','color','reference_price','direct_checkout','requires_prescription','image','image_url','active','mining_only','brand','model','stock_category','stock_category_name','material']
+        fields=['id','sku','name','category','description','lens_type','variants','crystal','treatments','color','reference_price','direct_checkout','requires_prescription','image','image_url','active','mining_only','brand','brand_name','model','model_name','stock_category','stock_category_name','material']
+
+    def to_representation(self, product):
+        data = super().to_representation(product)
+        variants = getattr(product, 'catalog_variants', None)
+        if variants is None:
+            return data
+        available = [variant.label for variant in variants
+                     if variant.active and hasattr(variant, 'stock') and variant.stock.quantity > variant.held]
+        data['available_variants'] = available if variants else None
+        data['availability'] = ('available' if available else 'out') if variants else 'review'
+        if product.reference_price is not None:
+            from .benefits import calculate
+            _, amount, benefit = calculate(None, [{'product': product, 'price': product.reference_price,
+                'quantity': 1}], available=self.context.get('catalog_benefits', ()), unit_preview=True)
+            data['catalog_price'] = str(amount)
+            data['catalog_benefit'] = benefit.get('name')
+        return data
     def validate(self, data):
         if data.get('direct_checkout', getattr(self.instance, 'direct_checkout', False)) and not data.get('reference_price', getattr(self.instance, 'reference_price', None)):
             raise serializers.ValidationError({'reference_price': 'Configura un precio positivo antes de habilitar el checkout.'})

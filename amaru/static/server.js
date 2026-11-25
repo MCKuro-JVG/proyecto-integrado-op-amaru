@@ -43,7 +43,7 @@ function paginationURL(number){const query=new URLSearchParams(params);query.set
 function pages(result){return `<p>${esc(result.count)} registros · Página ${esc(params.get('pagina')||1)}</p><div class="actions">${result.previous?link('← Anterior',paginationURL(Number(params.get('pagina')||1)-1)):''}${result.next?link('Siguiente →',paginationURL(Number(params.get('pagina')||1)+1)):''}</div>`;}
 
 const commercial=window.AmaruCommercial({api,esc,head,panel,input,select,area,check,form,table,btn,link,note,currency,date,dialog,close,message,has,screen,params,pages,list,get session(){return session;}});
-const organizationQR=window.AmaruOrganizationQR({api,esc,head,panel,input,select,check,form,table,btn,link,note,dialog,message,screen,params,date,mountAppointmentCalendar,get session(){return session;}});
+const organizationQR=window.AmaruOrganizationQR({api,esc,head,panel,input,select,check,form,table,btn,link,note,dialog,message,screen,params,date,mountAppointmentCalendar,invitationDialog,get session(){return session;}});
 document.addEventListener('invalid',event=>{const f=event.target.form;if(!f?.dataset.form)return;const feedback=f.querySelector('.form-feedback');if(feedback)feedback.textContent='Revisa el campo '+(f.querySelector('label[for="'+event.target.id+'"]')?.textContent||event.target.name)+'.';},true);
 const registrationLink='<p class="signup-link"><a href="/app/registro.html">¿No tienes una cuenta? Regístrate aquí.</a></p>';
 async function renderRegistration(){
@@ -215,7 +215,7 @@ async function render(){
  const publicPages=['index','catalogo','formulario_remoto','producto','carrito','portal_convenios','registro','privacidad','invitacion','registro_trabajador','consulta_convenio'];
  if(!publicPages.includes(page)&&!session.authenticated){loginForm();return;}
  if(!publicPages.includes(page)&&!['consulta','recepcion','documentos','representante','sindicato','sindicatos','retiro','pagos','mis_beneficios','qr_organizacion'].includes(page)&&!session.permissions.some(p=>p.startsWith('gestion.view_'))){screen.innerHTML=head('Acceso restringido')+link('Ir a mis pedidos','consulta.html');return;}
- if(page==='index'){screen.innerHTML=`<section class="hero"><div><h1>Ópticas Amaru</h1><h2>Tu atención, conectada.</h2><p>Desde la primera consulta hasta el retiro de tus lentes.</p><div class="actions">${link('Solicitar atención','formulario_remoto.html')}${link('Productos y servicios','catalogo.html')}${link('Mis pedidos','consulta.html')}</div></div><div class="brand-feature"><img class="institutional-logo" src="/static/interfaz/img/logo-amaru-oficial.png" width="280" height="144" alt="Óptica Amaru · Tu Visión, Tu Imagen"></div></section>`+note('Catálogo académico y horarios de referencia. Las solicitudes quedan registradas para revisión, sin envío automático de correos.');}
+ if(page==='index')await renderStorefront();
  else if(page==='registro')await renderRegistration();
  else if(page==='registro_trabajador')await organizationQR.publicPage('worker');
  else if(page==='consulta_convenio')await organizationQR.publicPage('inquiry');
@@ -257,6 +257,68 @@ async function render(){
  }catch(e){error(e);}finally{document.documentElement.dataset.amaruReady='true';}
 }
 const categories=[['seguridad','Armazones de seguridad'],['armazon','Armazones particulares'],['cristal','Cristales'],['repuesto','Repuestos']];
+const storeImage=(name)=>'/static/interfaz/img/demo-'+name+'.webp';
+const opticalCategories=[
+ ['armazon','Armazones','opticos'],['sol','Lentes de sol','sol'],['seguridad','Lentes de seguridad','seguridad'],
+ ['repuesto','Accesorios','accesorios']
+];
+function catalogPrice(product){
+ if(product.reference_price==null)return '<p class="store-price">Precio por confirmar</p>';
+ const discount=Number(product.catalog_price)<Number(product.reference_price);
+ return '<p class="store-price">'+(discount?'<del>'+currency(product.reference_price)+'</del> ':'')+
+  '<strong>'+currency(discount?product.catalog_price:product.reference_price)+'</strong></p>'+
+  (discount?'<p class="store-benefit">'+esc(product.catalog_benefit)+' · Precio referencial con beneficio</p>':'');
+}
+function catalogCard(product, featured=false){
+ const category=opticalCategories.find(([value])=>value===product.category);
+ const image=product.image_url||storeImage(category?.[2]||'opticos');
+ const details='producto.html?id='+product.id;
+ const availability={available:'Disponible',out:'Agotado',review:'Disponibilidad por confirmar'}[product.availability]||'Disponibilidad por confirmar';
+ return `<article class="store-product"><a class="store-product-media" href="${details}" aria-label="Ver ${esc(product.name)}">
+  <img width="440" height="440" loading="lazy" decoding="async" src="${esc(image)}" alt="${esc(product.image_url?product.name:'Imagen ilustrativa de la categoría')}">
+  ${product.image_url?'':'<small>Imagen ilustrativa</small>'}</a><div class="store-product-content">
+  <p class="store-product-category">${esc([product.brand_name,product.model_name].filter(Boolean).join(' · ')||product.stock_category_name||category?.[1]||'Óptica')}</p>
+  <h3><a href="${details}">${esc(product.name)}</a></h3>${catalogPrice(product)}
+  <div class="store-tags"><span class="store-tag ${product.availability==='out'?'store-tag-muted':''}">${availability}</span>${product.requires_prescription?'<span class="store-tag store-tag-muted">Requiere receta</span>':''}</div>
+  <div class="actions">${link('Ver detalles',details)}${!featured&&product.availability!=='out'?link('Agregar al carrito',details+'#seleccion'):''}</div></div></article>`;
+}
+async function renderStorefront(){
+ screen.classList.add('storefront');
+ screen.innerHTML=`<section class="store-hero"><div class="store-hero-copy">
+  <img class="store-hero-logo" src="/static/interfaz/img/logo-amaru-oficial.png" width="212" height="109" alt="Óptica Amaru">
+  <h1>Lentes para<br>cada día.</h1><p>Encuentra tu próximo armazón, revisa tus beneficios y agenda atención con Ópticas Amaru.</p>
+  <div class="actions"><a class="button primary" href="catalogo.html">Explorar catálogo</a>${link('Agendar atención','formulario_remoto.html')}</div>
+  </div><figure><img src="${storeImage('hero')}" width="510" height="510" fetchpriority="high" alt="Armazón color carey sobre piedra cálida"><figcaption>Imagen de demostración</figcaption></figure></section>
+  <section class="store-section" aria-labelledby="store-categories"><div class="store-section-heading"><h2 id="store-categories">Encuentra lo que buscas</h2>${link('Ver catálogo','catalogo.html')}</div>
+  <div class="store-categories">${opticalCategories.map(([value,label,photo])=>`<a href="catalogo.html?${value==='sol'?'q='+encodeURIComponent(label):'category='+value}"><img src="${storeImage(photo)}" loading="lazy" decoding="async" width="440" height="440" alt=""><span>${label} <b aria-hidden="true">↗</b></span></a>`).join('')}</div>
+  <p class="store-caption">Fotografías ilustrativas de categorías.</p></section>
+  <div data-store-featured></div>
+  <section class="store-service"><img src="${storeImage('atencion')}" width="440" height="440" loading="lazy" decoding="async" alt="Ilustración de un ajuste de armazón">
+  <div><h2>Atención que parte contigo</h2><p>Agenda una visita o solicita orientación sobre lentes, recetas y cuidado de tus armazones.</p>${link('Solicitar atención','formulario_remoto.html')}</div></section>
+  <section class="store-agreements"><div><h2>Convenios para tu organización</h2><p>Revisa tu afiliación y las condiciones vigentes para titulares y cargas familiares.</p></div>
+  <div class="actions">${link('Consultar convenios','portal_convenios.html')}${session.mining?link('Ver lentes mineros','catalogo.html?scope=mining'):''}</div></section>
+  <footer class="store-footer"><div><strong>Ópticas Amaru</strong><p>Catálogo y atención en línea</p></div><nav aria-label="Enlaces al pie de página">${link('Mis pedidos','consulta.html')}${link('Privacidad','privacidad.html')}${link('Contacto','formulario_remoto.html?tipo=contacto')}</nav></footer>`;
+ const featured=screen.querySelector('[data-store-featured]');
+ try{
+  const data=await api('products/?featured=1');
+  if(!data.results.length)return;
+  featured.innerHTML=`<section class="store-section" aria-labelledby="store-featured"><div class="store-section-heading">
+   <h2 id="store-featured">Explora el catálogo</h2><div class="actions"><button class="button soft" type="button" data-store-slide="-1" aria-label="Productos anteriores">←</button>
+   <button class="button soft" type="button" data-store-slide="1" aria-label="Productos siguientes">→</button></div></div>
+   <div class="store-slider" tabindex="0" role="region" aria-label="Productos destacados">${data.results.map(p=>catalogCard(p,true)).join('')}</div></section>`;
+  const track=featured.querySelector('.store-slider');
+  function slide(direction){
+   const card=track.querySelector('.store-product');
+   const step=card.getBoundingClientRect().width+parseFloat(getComputedStyle(track).columnGap);
+   track.scrollBy({left:direction*step,behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
+  }
+  featured.querySelectorAll('[data-store-slide]').forEach(button=>button.addEventListener('click',()=>slide(Number(button.dataset.storeSlide))));
+  track.addEventListener('keydown',e=>{
+   if(e.target!==track||!['ArrowLeft','ArrowRight'].includes(e.key))return;
+   e.preventDefault();slide(e.key==='ArrowRight'?1:-1);
+  });
+ }catch{featured.innerHTML=panel('Catálogo',link('Consultar productos','catalogo.html'));}
+}
 async function renderCatalog(){
  const manage=params.get('gestion')==='1'&&has('view_product');
  const mining=params.get('scope')==='mining'&&!manage;
@@ -266,7 +328,7 @@ async function renderCatalog(){
    select('category','Tipo de producto',[['','Todos'],...categories],params.get('category')||'')+select('stock_category','Categoría del catálogo',[['','Todas'],...stockCategories.results.map(c=>[c.id,c.name])],params.get('stock_category')||''),'Buscar');
  const navigation=manage?link('Vista pública','catalogo.html'):has('view_product')?link('Administrar catálogo','catalogo.html?gestion=1'):'';
  const create=manage&&has('add_product')?btn('Nuevo producto','product-new'):'';
- const cards=data.results.map(p=>panel(p.name,
+ const cards=data.results.map(p=>!manage?catalogCard(p):panel(p.name,
   `<img src="${esc(p.active&&p.image_url?p.image_url:'/static/interfaz/img/atencion_optica.svg')}" alt="${esc(p.name)}" style="width:100%;max-height:220px;object-fit:contain">
   <p>${esc(p.description)}</p><dl><dt>Categoría</dt><dd>${esc(p.stock_category_name||categories.find(([value])=>value===p.category)?.[1]||p.category)}</dd>
   <dt>Tipo, cristal y color</dt><dd>${esc([p.lens_type,p.crystal,p.color].filter(Boolean).join(' · ')||'Por definir')}</dd>
@@ -275,7 +337,7 @@ async function renderCatalog(){
   <p>${p.active?'Visible en el catálogo':'Producto desactivado'}</p>`+
   (manage?(has('change_product')?btn('Editar producto','product-edit',p.id):''):link('Ver producto','producto.html?id='+p.id)+link('Consultar','formulario_remoto.html?tipo=contacto'))));
  screen.innerHTML=head(manage?'Administración de catálogo':mining?'Catálogo de lentes mineros':'Productos y servicios','Catálogo académico con productos de prueba.')+
-  navigation+create+(session.mining?link(mining?'Catálogo general':'Catálogo de lentes mineros',mining?'catalogo.html':'catalogo.html?scope=mining'):'')+link('Ver carrito','carrito.html')+filters+`<div class="cards">${cards.join('')||note('No se encontraron productos.')}</div>`+pages(data);
+  navigation+create+(session.mining?link(mining?'Catálogo general':'Catálogo de lentes mineros',mining?'catalogo.html':'catalogo.html?scope=mining'):'')+link('Ver carrito','carrito.html')+filters+`<div class="${manage?'cards':'store-catalog'}">${cards.join('')||note('No se encontraron productos.')}</div>`+pages(data);
 }
 async function productRequestForm(id){
  if(!session.authenticated){
@@ -338,7 +400,7 @@ async function renderAgreements(){
  const management=has('change_agreement');
  const reviewLink=has('view_inquiry')?link('Revisar pendientes','solicitudes.html?verification=pendiente'):'';
  const rows=result.results.map(a=>{
-  let actions=has('view_inquiry')?link('Consultar trabajadores','solicitudes.html?verification=all&agreement='+a.id):'';
+  let actions=link('Trabajadores registrados','qr_organizacion.html?organizacion='+a.id+'&vista=trabajadores#organization-workers');
   actions+=link('Códigos QR de atención','qr_organizacion.html?organizacion='+a.id);
    if(has('view_agreementbenefit'))actions+=link('Beneficios','beneficios.html?agreement='+a.id);
   if(management){
@@ -421,18 +483,21 @@ async function renderProduct(){
  const id=params.get('id')||'';
  if(!/^\d+$/.test(id))throw new Error('Selecciona un producto del catálogo.');
  const p=await api('products/'+id+'/');
- const picture=`<img class="catalog-detail-image" src="${esc(p.image_url||'/static/interfaz/img/atencion_optica.svg')}" alt="${esc(p.name)}">`;
+ const illustrative=opticalCategories.find(([category])=>category===p.category)?.[2]||'opticos';
+ const picture=`<img class="catalog-detail-image" width="440" height="440" src="${esc(p.image_url||storeImage(illustrative))}" alt="${esc(p.image_url?p.name:'Imagen ilustrativa')}">`;
+ const variants=(p.available_variants??(p.variants?.length?p.variants:[''])).map(variant=>[variant,variant||'Modelo único']);
  screen.innerHTML=head(p.name,'Producto de demostración')+panel('Modelo '+p.sku,picture+`<p>${esc(p.description)}</p><p>${esc([p.lens_type,p.crystal,p.color,p.treatments].filter(Boolean).join(' · '))}</p>`+
-  note(p.reference_price==null?'Precio sujeto a cotización':'Precio de referencia '+currency(p.reference_price))+
+  catalogPrice(p)+(p.image_url?'':'<small>Imagen ilustrativa</small>')+
   (p.requires_prescription?note('Requiere una receta vigente.'): '')+
-  form('cart-add',`<input name="product" type="hidden" value="${p.id}">`+
-   select('variant','Variante',p.variants?.length?p.variants:[['','Modelo único']])+input('quantity','Cantidad','number',1,'required min="1" max="99"'),'Agregar al carrito'))+
+  '<div id="seleccion">'+(variants.length?form('cart-add',`<input name="product" type="hidden" value="${p.id}">`+
+   select('variant','Variante',variants)+input('quantity','Cantidad','number',1,'required min="1" max="99"'),'Agregar al carrito'):note('Agotado. Consulta por alternativas.'))+'</div>')+
   link('Ver carrito','carrito.html')+link('Volver al catálogo','catalogo.html');
 }
 async function checkoutKey(payload){
  const raw=new TextEncoder().encode(JSON.stringify(payload));
  const digest=await crypto.subtle.digest('SHA-256',raw);
- const signature=Array.from(new Uint8Array(digest),x=>x.toString(16).padStart(2,'0')).join('');
+ const fingerprint=Array.from(new Uint8Array(digest),x=>x.toString(16).padStart(2,'0')).join('');
+ const signature=session.client_id+':'+fingerprint;
  let previous;try{previous=JSON.parse(sessionStorage.getItem('amaru-checkout-attempt')||'null');}catch{}
  if(previous?.signature===signature)return previous.key;
  const key=crypto.randomUUID();sessionStorage.setItem('amaru-checkout-attempt',JSON.stringify({signature,key}));return key;
@@ -473,6 +538,8 @@ async function renderCart(){
  screen.innerHTML+=panel('Resumen de compra',`<p>${esc(profile.name)} · ${esc(profile.phone)} · ${esc(profile.email||'Sin correo')}</p>`+
   note(profile.agreement?'Convenio validado y vigente: '+profile.agreement:'Atención particular')+
   (pricing&&!pricing.pending?'<dl class="checkout-totals"><dt>Subtotal</dt><dd>'+currency(pricing.original)+'</dd><dt>Beneficio aplicable</dt><dd>'+esc(pricing.benefit.name||'Sin descuento')+' · '+currency(pricing.benefit.discount||0)+'</dd><dt>Total final en CLP</dt><dd><strong>'+currency(pricing.amount)+'</strong></dd></dl>':note(priceError||'Un precio necesita confirmación previa de la óptica.'))+
+  (pricing?.benefits?.length?'<details class="checkout-benefits"><summary>Beneficios para esta selección</summary><p>Se aplica automáticamente el mayor descuento compatible.</p><ul>'+
+   pricing.benefits.map(b=>'<li>'+esc(b.name)+' · '+esc(b.compatible?currency(b.discount):b.reason)+'</li>').join('')+'</ul></details>':'')+
   note(ready?'El servidor volverá a comprobar precios, beneficios y disponibilidad al continuar.':'Antes de pagar, la óptica debe confirmar los precios, las existencias o la receta requerida.')+
   (needsRecipe?note('Adjunta o selecciona tu receta vigente para enviarla a revisión. La carga por sí sola no sustituye la revisión óptica.'):'')+
   note('Pago de demostración académica. No realizar transferencias reales.')+
@@ -502,7 +569,7 @@ async function purchaseDetail(id){
 async function requestForm(){
  const code=params.get('convenio')||'';
  const kind=code||params.get('registro_convenio')==='1'?'registro':params.get('tipo')||'agenda';
- screen.innerHTML=head('Agendar / contactar','No necesitas una cuenta. Tu solicitud será revisada por el personal.')+
+ screen.innerHTML=head(code?'Registro de trabajador por convenio':'Agendar / contactar','Tu solicitud será revisada por el personal.')+
  form('inquiry',select('kind','Tipo de solicitud',[['agenda','Atención'],['contacto','Contacto'],['lentes','Orientación de lentes'],['registro','Registro de cliente']],kind)+
  input('name','Nombre completo','text','','required minlength="3" maxlength="180" autocomplete="name"')+
  '<div id="registration-rut" hidden>'+input('registration_rut','RUT para registro','text','','maxlength="12" placeholder="12345678-5"')+'</div>'+
@@ -516,8 +583,8 @@ async function requestForm(){
  '<div data-calendar-content></div><p data-calendar-feedback role="status"></p></section>'+
  area('reason','Motivo de consulta')+
  '<div class="honeypot" aria-hidden="true"><label>Dejar vacío<input name="website" tabindex="-1" autocomplete="off"></label></div>'+
- check('contact_authorized','Autorizo el contacto para gestionar esta solicitud.'),'Registrar solicitud')+
- note('Las horas quedan sujetas a aprobación. El registro de cliente crea una ficha pendiente de revisión, sin cuenta de acceso. Esta autorización no permite promociones ni posventa.')+
+ check('contact_authorized','Autorizo el contacto para gestionar esta solicitud.'),code?'Registrar trabajador':'Registrar solicitud')+
+ note(code?'La afiliación se guardará en la organización y quedará pendiente de verificar pertenencia.':'Las horas quedan sujetas a aprobación. Esta autorización permite gestionar tu solicitud.')+
  (params.get('origen')==='qr'?note('Origen de esta solicitud: Código QR'):'');
  const f=screen.querySelector('form');f.dataset.key=crypto.randomUUID();f.querySelector('[name=contact_authorized]').required=true;
  const calendar=f.querySelector('#appointment-calendar');
@@ -805,10 +872,17 @@ document.addEventListener('submit',async e=>{
   if(direct&&(f.dataset.direct!=='1'||!data.confirmed))throw new Error('Confirma la selección y el total. Si falta una revisión, solicita confirmación previa.');
   const payload={...data,mode:direct?'compra':'cotizacion',items:readCart(),contact_authorized:!!data.contact_authorized,confirmed:!!data.confirmed};
   if(!payload.prescription)delete payload.prescription;
-  payload.idempotency_key=await checkoutKey(payload);
   if(direct)payload.expected_amount=f.dataset.expected;
+  payload.idempotency_key=await checkoutKey(payload);
   const result=await api(direct?'checkout-payment/':'checkout/',{method:'POST',body:payload});
-  saveCart([]);location.href='carrito.html?'+(direct?'pago='+result.payment.id:'solicitud='+result.id);return;
+  const remaining=readCart().flatMap(line=>{
+   const purchased=payload.items.find(item=>item.product===line.product&&item.variant===line.variant);
+   const quantity=line.quantity-(purchased?.quantity||0);
+   return quantity>0?[{...line,quantity}]:[];
+  });
+  saveCart(remaining);
+  sessionStorage.removeItem('amaru-checkout-attempt');
+  location.href='carrito.html?'+(direct?'pago='+result.payment.id:'solicitud='+result.id);return;
  }
  case 'purchase-quote':{const prices=Object.fromEntries(Object.entries(data).filter(([key])=>key.startsWith('price_')).map(([key,value])=>[key.slice(6),Number(value)]));const result=await api('purchases/'+data.id+'/quote/',{method:'POST',body:{prices}});close();if(has('change_quote'))await quoteForm(result.id);message('Borrador creado: '+result.folio);return;}
  case 'register':{

@@ -85,9 +85,15 @@ class Products(Records):
 
     def get_queryset(self):
         from .unions import membership_for
-        user = self.request.user
-        client = Client.objects.filter(user=user, active=True).first() if user.is_authenticated else None
-        queryset = super().get_queryset().filter(active=True)
+        client = self.catalog_client
+        queryset = super().get_queryset().filter(active=True).select_related('brand', 'model', 'stock_category')
+        if self.action in ('list', 'retrieve'):
+            from django.db.models import Prefetch, Sum
+            from django.db.models.functions import Coalesce
+            variants = ProductVariant.objects.select_related('stock').annotate(
+                held=Coalesce(Sum('stock__reservations__quantity', filter=Q(
+                    stock__reservations__state='active', stock__reservations__expires_at__gt=timezone.now())), 0))
+            queryset = queryset.prefetch_related(Prefetch('stock_variants', queryset=variants, to_attr='catalog_variants'))
         mining = self.request.query_params.get('scope') == 'mining'
         if mining:
             if not client or not membership_for(client):
@@ -95,7 +101,26 @@ class Products(Records):
             queryset = queryset.filter(mining_only=True)
         elif (not self.kwargs.get('pk') and not self.request.query_params.get('ids')) or not client or not membership_for(client):
             queryset = queryset.filter(mining_only=False)
-        return catalog_query(queryset, self.request)
+        queryset = catalog_query(queryset, self.request)
+        if self.action == 'list' and self.request.query_params.get('featured') == '1':
+            return queryset[:8]
+        return queryset
+
+    @property
+    def catalog_client(self):
+        if not hasattr(self, '_catalog_client'):
+            user = self.request.user
+            self._catalog_client = Client.objects.select_related('agreement').filter(
+                user=user, active=True).first() if user.is_authenticated else None
+        return self._catalog_client
+
+    def get_serializer_context(self):
+        from .benefits import eligible
+        context = super().get_serializer_context()
+        client = self.catalog_client
+        if client and self.action in ('list', 'retrieve'):
+            context['catalog_benefits'] = tuple(eligible(client).order_by('pk'))
+        return context
     @action(detail=True,methods=['get'])
     def image(self,request,pk=None):
         product=self.get_object()
@@ -352,7 +377,10 @@ class Inquiries(viewsets.GenericViewSet):
                                            submitted_code=str(request.data.get('agreement_code', '')).strip().lower())
         except IntegrityError:
             return Response({'detail':'Ese horario ya tiene una solicitud. Seleccione otro.'},status=409)
-        return Response({'reference':str(obj.token),'created':created,'detail':'Solicitud registrada para revisión; no confirma una atención ni envía mensajes.'},status=201 if created else 200)
+        detail = ('Trabajador registrado para el convenio. La afiliación queda pendiente de validar.'
+                  if obj.kind == 'registro' and obj.agreement_id
+                  else 'Solicitud registrada para revisión; no confirma una atención ni envía mensajes.')
+        return Response({'reference': str(obj.token), 'created': created, 'detail': detail}, status=201 if created else 200)
     def partial_update(self,request,pk=None):
         from .agenda import AgendaConflict, is_open, lock_agenda
         with transaction.atomic():
@@ -522,7 +550,7 @@ class VerificationConflict(APIException):
     status_code = 409
 
 
-def review_membership(user, pk, values, organization_id=None):
+def review_membership(user, pk, values, organization_id=None, *, expected='pendiente'):
     with transaction.atomic():
         candidates = Inquiry.objects.filter(agreement__isnull=False)
         if organization_id is not None:
@@ -530,7 +558,7 @@ def review_membership(user, pk, values, organization_id=None):
         reference = get_object_or_404(candidates, pk=pk)
         agreement = Agreement.objects.select_for_update().get(pk=reference.agreement_id)
         inquiry = Inquiry.objects.select_for_update().get(pk=pk)
-        if inquiry.verification_state != 'pendiente':
+        if inquiry.verification_state != expected:
             raise VerificationConflict('La solicitud ya fue revisada.')
         if organization_id is not None and not agreement.available:
             raise PermissionDenied('El convenio no está vigente.')
@@ -539,11 +567,12 @@ def review_membership(user, pk, values, organization_id=None):
                 raise ValidationError('Gestiona la vinculación desde el Panel del Sindicato.')
             if not agreement.available or (inquiry.agreement_role == 'carga' and not agreement.allow_dependents):
                 raise ValidationError('El convenio no admite esta aprobación actualmente.')
-            if inquiry.origin == 'qr_worker' and not values.get('identity_verified'):
+            requires_identity = inquiry.origin in ('qr_worker', 'manual_code', 'administrative')
+            if requires_identity and not values.get('identity_verified'):
                 raise ValidationError('Verifica expresamente la identidad y la autorización de vinculación antes de aprobar.')
             if inquiry.client_id:
                 client = get_object_or_404(Client.objects.select_for_update(), pk=inquiry.client_id)
-            elif inquiry.origin == 'qr_worker':
+            elif requires_identity:
                 if not user.has_perm('gestion.change_client'):
                     raise PermissionDenied('Ópticas Amaru debe verificar y asociar la ficha antes de aprobar.')
                 client = Client.objects.select_for_update().filter(rut=inquiry.registration_rut).first()
@@ -558,7 +587,7 @@ def review_membership(user, pk, values, organization_id=None):
                 raise ValidationError('La solicitud necesita una ficha verificada.')
             if client.agreement_id and client.agreement_id != agreement.pk:
                 raise VerificationConflict('La ficha tiene otro convenio. Revisa la vinculación antes de aprobar.')
-            if inquiry.origin == 'qr_worker' and client.union_memberships.filter(state='active').exists():
+            if requires_identity and client.union_memberships.filter(state='active').exists():
                 raise VerificationConflict('La ficha tiene una afiliación sindical activa. Revisa el traslado por separado.')
             client.agreement = agreement
             client.category = 'convenio'
@@ -587,7 +616,8 @@ def client_agreement(request, pk):
     if request.method == 'GET' and pending:
         return Response({'agreement': pending.union.agreement.name, 'available': pending.union.agreement.available,
                          'verified': False, 'role': pending.role, 'pending': pending.state == 'pending'})
-    latest = client.inquiries.filter(agreement_id=client.agreement_id, verification_state='aprobada').order_by('-verified_at').first() if client.agreement_id else None
+    latest = client.inquiries.filter(agreement_id=client.agreement_id).exclude(
+        verification_state='').order_by('-created_at', '-pk').first() if client.agreement_id else None
     if request.method == 'POST':
         if not request.user.has_perm('gestion.add_request'):
             raise PermissionDenied()
@@ -595,7 +625,7 @@ def client_agreement(request, pk):
         return Response({'detail': 'Atención registrada en la bitácora.'}, status=201)
     return Response({'agreement': client.agreement.name if client.agreement else None,
         'available': client.agreement.available if client.agreement else False,
-        'verified': bool(latest), 'role': latest.agreement_role if latest else None,
+        'verified': bool(latest and latest.verification_state == 'aprobada'), 'role': latest.agreement_role if latest else None,
         'pending': client.inquiries.filter(verification_state='pendiente').exists()})
 
 

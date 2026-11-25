@@ -68,6 +68,8 @@ def checkout_payment(request):
         payment = getattr(quote, 'transfer_payment', None)
         if not payment:
             raise Conflict('Esta solicitud necesita la confirmación de la óptica antes de pagar.')
+        if payment.amount != values['expected_amount']:
+            raise Conflict('La referencia corresponde a un pago con otro monto confirmado.')
     else:
         lines = list(row.purchase_lines.select_related('product'))
         if any(not line.product.direct_checkout or not line.unit_price for line in lines):
@@ -158,8 +160,12 @@ def preview(request):
     form = CheckoutInput(data=request.data)
     form.is_valid(raise_exception=True)
     lines = []
-    for selected in form.validated_data['items']:
-        product = get_object_or_404(Product, pk=selected['product'], active=True)
+    selections = form.validated_data['items']
+    products = Product.objects.filter(active=True).in_bulk({item['product'] for item in selections})
+    for selected in selections:
+        product = products.get(selected['product'])
+        if product is None:
+            raise Conflict('Un producto dejó de estar disponible. Revisa el carrito.')
         if product.mining_only:
             from .unions import membership_for
             if not membership_for(client):
@@ -169,8 +175,9 @@ def preview(request):
         if product.reference_price is None:
             return Response({'pending': True})
         lines.append({'product': product, 'price': product.reference_price, 'quantity': selected['quantity']})
-    original, final, snapshot = calculate(client, lines)
-    return Response({'original': str(original), 'amount': str(final), 'benefit': snapshot, 'pending': False})
+    original, final, snapshot, options = calculate(client, lines, include_options=True)
+    return Response({'original': str(original), 'amount': str(final), 'benefit': snapshot,
+                     'benefits': options, 'pending': False})
 
 
 def confirm_retry(row, client, values):
