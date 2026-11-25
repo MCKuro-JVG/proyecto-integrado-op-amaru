@@ -2,7 +2,7 @@ from django.urls import path,include
 from rest_framework.routers import DefaultRouter
 from . import agenda, api, catalog_requests, membership, pickup, purchases, registration, unions
 from .attention import attention_qr
-from . import commercial
+from . import commercial, organization_qr
 router=DefaultRouter()
 for prefix,view in [('clients',api.Clients),('prescriptions',api.Prescriptions),('products',api.Products),
     ('catalog-management',api.CatalogManagement),('quotes',api.Quotes),('orders',api.Orders),('warranties',api.Warranties),('inquiries',api.Inquiries),
@@ -12,7 +12,11 @@ for prefix, view in [('benefits',commercial.Benefits),('stock',commercial.Stocks
                      ('brands',commercial.Brands),('product-models',commercial.Models),('stock-categories',commercial.Categories),
                      ('suppliers',commercial.Suppliers),('variants',commercial.Variants)]:
     router.register(prefix,view,basename=prefix)
-urlpatterns=[path('checkout-payment/',purchases.checkout_payment),path('orders/<int:pk>/cancel/',commercial.cancel_order),path('my-benefits/',commercial.my_benefits),path('transfer-configuration/',commercial.bank_configuration),
+urlpatterns=[path('organization-qrs/<int:pk>/',organization_qr.management),
+    path('organization-qrs/<int:pk>/registrations/',organization_qr.registrations),
+    path('organization-qrs/<int:pk>/<str:purpose>/image/',organization_qr.image),
+    path('organization-qr/<str:purpose>/<uuid:token>/',organization_qr.public),
+    path('checkout-payment/',purchases.checkout_payment),path('orders/<int:pk>/cancel/',commercial.cancel_order),path('my-benefits/',commercial.my_benefits),path('transfer-configuration/',commercial.bank_configuration),
     path('payments/',commercial.payments),path('quotes/<int:pk>/confirm-payment/',commercial.confirm_payment),
     path('payments/<int:pk>/',commercial.payment_detail),path('payments/<int:pk>/voucher/',commercial.submit_voucher),path('payments/<int:pk>/review/',commercial.review_payment),
     path('payment-vouchers/<int:pk>/file/',commercial.voucher_file),path('register/',registration.register,name='client-register'),path('my-account/',registration.my_account),path('checkout-preview/',purchases.preview),path('checkout/',purchases.checkout),path('purchases/<int:pk>/',purchases.detail),path('purchases/<int:pk>/quote/',purchases.quote),path('membership/status/',membership.status),path('membership/queue/',membership.queue),path('membership/queue/<int:pk>/',membership.decide),path('clients/<int:pk>/agreement/',api.client_agreement),path('agreement-verifications/<int:pk>/',api.verify_agreement),path('my-prescriptions/',catalog_requests.my_prescriptions),path('product-requests/',catalog_requests.request_product),path('agenda/',agenda.availability),path('agenda/blocks/',agenda.blocks),path('attention-qr/',attention_qr),path('session/',api.session),path('login/',api.sign_in),path('logout/',api.sign_out),

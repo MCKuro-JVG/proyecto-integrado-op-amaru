@@ -43,6 +43,7 @@ function paginationURL(number){const query=new URLSearchParams(params);query.set
 function pages(result){return `<p>${esc(result.count)} registros · Página ${esc(params.get('pagina')||1)}</p><div class="actions">${result.previous?link('← Anterior',paginationURL(Number(params.get('pagina')||1)-1)):''}${result.next?link('Siguiente →',paginationURL(Number(params.get('pagina')||1)+1)):''}</div>`;}
 
 const commercial=window.AmaruCommercial({api,esc,head,panel,input,select,area,check,form,table,btn,link,note,currency,date,dialog,close,message,has,screen,params,pages,list,get session(){return session;}});
+const organizationQR=window.AmaruOrganizationQR({api,esc,head,panel,input,select,check,form,table,btn,link,note,dialog,message,screen,params,date,mountAppointmentCalendar,get session(){return session;}});
 document.addEventListener('invalid',event=>{const f=event.target.form;if(!f?.dataset.form)return;const feedback=f.querySelector('.form-feedback');if(feedback)feedback.textContent='Revisa el campo '+(f.querySelector('label[for="'+event.target.id+'"]')?.textContent||event.target.name)+'.';},true);
 const registrationLink='<p class="signup-link"><a href="/app/registro.html">¿No tienes una cuenta? Regístrate aquí.</a></p>';
 async function renderRegistration(){
@@ -137,7 +138,7 @@ async function renderUnion(){
  const u=data.union;
  const selected=unionMenu.find(([key])=>key===params.get('vista'))?.[0]||'resumen';
  const nav=unionMenu.map(([key,label])=>`<a class="button soft" ${key===selected?'aria-current="page"':''} href="sindicato.html?vista=${key}">${label}</a>`).join('');
- screen.innerHTML=head('Panel del Sindicato',u.name)+link('Beneficios institucionales','mis_beneficios.html')+`<nav class="actions union-nav" aria-label="Panel del Sindicato">${nav}</nav>`;
+ screen.innerHTML=head('Panel del Sindicato',u.name)+link('Códigos QR de atención','qr_organizacion.html?organizacion='+u.agreement_id)+link('Beneficios institucionales','mis_beneficios.html')+`<nav class="actions union-nav" aria-label="Panel del Sindicato">${nav}</nav>`;
  let content;
  if(selected==='convenio'){
   content=panel('Mi convenio',`<p>${esc(u.identifier)} · ${esc(unionStates[u.state])}</p>
@@ -171,6 +172,7 @@ async function renderUnion(){
     `<article class="stat"><div>${label}</div><strong>${esc(n)}</strong></article>`).join('')}</div>`;
  }
  screen.insertAdjacentHTML('beforeend',content);
+ if(['resumen','trabajadores','accesos'].includes(selected))organizationQR.watchUnion(data,renderUnion);
 }
 async function renderUnionAdmin(){
  if(!has('change_union')){screen.innerHTML=head('Gestión de sindicatos')+note('Se requiere autorización administrativa.');return;}
@@ -187,10 +189,10 @@ async function renderUnionAdmin(){
  '<div class="actions section-actions">'+btn('Registrar sindicato','union-new')+link('Ir a Convenios por código','convenios.html')+'</div>'+
  workflow('Cómo habilitar un sindicato',unionWorkflow)+
  unions.map(u=>panel(u.name,`<p>${esc(u.identifier)} · ${esc(unionStates[u.state])} · ${textDate(u.starts_on)} a ${textDate(u.ends_on)}</p>`+
-  unionDocument(u)+`<div class="actions union-nav">`+link('Ver trabajadores','sindicatos.html?union='+u.id)+btn('Editar datos institucionales','union-edit',u.id)+btn('Asociar PDF','union-upload',u.id)+btn('Reemitir invitación del representante','union-invite',u.id)+
+  unionDocument(u)+`<div class="actions union-nav">`+link('Ver trabajadores','sindicatos.html?union='+u.id)+link('Códigos QR de atención','qr_organizacion.html?organizacion='+u.agreement_id)+btn('Editar datos institucionales','union-edit',u.id)+btn('Asociar PDF','union-upload',u.id)+btn('Reemitir invitación del representante','union-invite',u.id)+
   (u.state==='active'?btn('Suspender sindicato','union-suspend',u.id):u.document?.signed_at?btn('Activar sindicato','union-activate',u.id):'')+'</div>')).join('')+
  panel('Vinculaciones y recuperaciones pendientes',table(['Organización','Trabajador','RUT','Acciones'],requests.map(r=>[
-  esc(r.organization),esc(r.name),esc(r.rut),(r.state==='pending'&&r.accepted_at?btn('Verificar y vincular','worker-review',r.id):'')+
+  esc(r.organization),esc(r.name),esc(r.rut),(r.state==='pending'&&r.accepted_at?btn('Verificar y vincular','worker-review',r.id):r.state==='pending'?btn('Invitar al titular','worker-reissue',r.id):'')+
   (r.recovery_requested_at?btn('Preparar recuperación','worker-reset',r.id):'')])));
 }
 function showUnionForm(){
@@ -210,11 +212,14 @@ function showPickupValidation(){
 function actionButtons(){return '<div class="actions">'+link('Mis pagos y comprobantes','pagos.html')+link('Mis beneficios','mis_beneficios.html')+'</div>';}
 async function render(){
  try{
- const publicPages=['index','catalogo','formulario_remoto','producto','carrito','portal_convenios','registro','privacidad','invitacion'];
+ const publicPages=['index','catalogo','formulario_remoto','producto','carrito','portal_convenios','registro','privacidad','invitacion','registro_trabajador','consulta_convenio'];
  if(!publicPages.includes(page)&&!session.authenticated){loginForm();return;}
- if(!publicPages.includes(page)&&!['consulta','recepcion','documentos','representante','sindicato','sindicatos','retiro','pagos','mis_beneficios'].includes(page)&&!session.permissions.some(p=>p.startsWith('gestion.view_'))){screen.innerHTML=head('Acceso restringido')+link('Ir a mis pedidos','consulta.html');return;}
+ if(!publicPages.includes(page)&&!['consulta','recepcion','documentos','representante','sindicato','sindicatos','retiro','pagos','mis_beneficios','qr_organizacion'].includes(page)&&!session.permissions.some(p=>p.startsWith('gestion.view_'))){screen.innerHTML=head('Acceso restringido')+link('Ir a mis pedidos','consulta.html');return;}
  if(page==='index'){screen.innerHTML=`<section class="hero"><div><h1>Ópticas Amaru</h1><h2>Tu atención, conectada.</h2><p>Desde la primera consulta hasta el retiro de tus lentes.</p><div class="actions">${link('Solicitar atención','formulario_remoto.html')}${link('Productos y servicios','catalogo.html')}${link('Mis pedidos','consulta.html')}</div></div><div class="brand-feature"><img class="institutional-logo" src="/static/interfaz/img/logo-amaru-oficial.png" width="280" height="144" alt="Óptica Amaru · Tu Visión, Tu Imagen"></div></section>`+note('Catálogo académico y horarios de referencia. Las solicitudes quedan registradas para revisión, sin envío automático de correos.');}
  else if(page==='registro')await renderRegistration();
+ else if(page==='registro_trabajador')await organizationQR.publicPage('worker');
+ else if(page==='consulta_convenio')await organizationQR.publicPage('inquiry');
+ else if(page==='qr_organizacion')await organizationQR.managePage(params.get('organizacion'));
  else if(page==='privacidad')renderPrivacy();
  else if(page==='catalogo')await renderCatalog();
  else if(page==='producto')await renderProduct();
@@ -334,7 +339,7 @@ async function renderAgreements(){
  const reviewLink=has('view_inquiry')?link('Revisar pendientes','solicitudes.html?verification=pendiente'):'';
  const rows=result.results.map(a=>{
   let actions=has('view_inquiry')?link('Consultar trabajadores','solicitudes.html?verification=all&agreement='+a.id):'';
-  if(a.code_available)actions+=btn('Mostrar QR','agreement-qr',a.id);
+  actions+=link('Códigos QR de atención','qr_organizacion.html?organizacion='+a.id);
    if(has('view_agreementbenefit'))actions+=link('Beneficios','beneficios.html?agreement='+a.id);
   if(management){
    actions+=btn('Editar convenio','agreement-edit',a.id)+btn(a.code?'Administrar código':'Generar código','agreement-code',a.id);
@@ -402,7 +407,7 @@ function renderMembershipPortal(){
 async function renderRepresentative(){
  if(!session.representative){screen.innerHTML=head('Acceso de representantes')+note('Esta cuenta no está autorizada para revisar un convenio.');return;}
  const data=await api('membership/queue/');
- screen.innerHTML=head('Validación de pertenencia',data.organization)+panel('Solicitudes de tu organización',table(
+ screen.innerHTML=head('Validación de pertenencia',data.organization)+link('Códigos QR de atención','qr_organizacion.html?organizacion='+data.organization_id)+panel('Solicitudes de tu organización',table(
   ['Nombre','RUT','Calidad','Estado','Acción'],data.requests.map(r=>[esc(r.name),esc(r.rut),esc(r.role),badge(r.state),r.state==='pendiente'?btn('Revisar','representative-review',r.id):''])));
 }
 function readCart(){
@@ -669,7 +674,7 @@ async function modulePage(){
  else if(page==='solicitudes'){
  action=btn('Mostrar QR de atención','attention-qr')+btn('Actualizar solicitudes','reload');
  body=form('inquiry-filter',select('status','Estado',[['','Todos'],...['Nueva','En revisión','Contactada','Cerrada','Cancelada']],params.get('status')||'')+input('day','Fecha de recepción','date',params.get('day')||'',''),'Filtrar')+
- table(['ID / recepción','Solicitante','Tipo / origen','Estado','Acción'],data.results.map(r=>[esc(r.id)+'<br>'+date(r.created_at),esc(r.name),esc(r.kind)+'<br>'+esc(r.source==='qr'?'Código QR':'Sitio web'),badge(r.status),btn('Ver detalle','inquiry-detail',r.id)+(has('change_inquiry')?btn('Revisar estado','inquiry-state',r.id):'')]));
+ table(['ID / recepción','Solicitante','Tipo / origen','Estado','Acción'],data.results.map(r=>[esc(r.id)+'<br>'+date(r.created_at),esc(r.name),esc(r.origin==='qr_worker'?'Registro de trabajador':r.origin==='qr_inquiry'?'Consulta de organización':r.kind)+'<br>'+esc(r.origin_label||(r.source==='qr'?'Código QR':'Sitio web')),badge(r.status),btn('Ver detalle','inquiry-detail',r.id)+(has('change_inquiry')?btn('Revisar estado','inquiry-state',r.id):'')]));
  }
  else if(page==='garantias'){
  action=has('add_warranty')?btn('Registrar solicitud','warranty-new'):'';
@@ -778,6 +783,7 @@ document.addEventListener('change',async e=>{
 });
 document.addEventListener('submit',async e=>{
  const f=e.target;if(!f.dataset.form)return;e.preventDefault();if(!f.reportValidity())return;
+ if(f.dataset.form.startsWith('orgqr-')){await organizationQR.submit(e);return;}
  if(f.dataset.form.startsWith('commerce-')){await commercial.submit(e);return;}
  if(f.dataset.busy==='1')return;
  const data=Object.fromEntries(new FormData(f)),submit=e.submitter||f.querySelector('[type=submit]');
@@ -791,7 +797,7 @@ document.addEventListener('submit',async e=>{
  try{switch(f.dataset.form){
  case 'membership-start':location.href='formulario_remoto.html?registro_convenio=1&convenio='+encodeURIComponent(data.code.trim());return;
  case 'membership-status':{const result=await api('membership/status/',{method:'POST',body:data});f.querySelector('.form-feedback').textContent='Estado: '+result.state;return;}
- case 'representative-review':{if(data.approved==='false'&&!data.confirmed)throw new Error('Marca la confirmación para rechazar la solicitud.');const id=data.id;delete data.id;delete data.confirmed;await api('membership/queue/'+id+'/',{method:'POST',body:data});break;}
+ case 'representative-review':{if(data.approved==='false'&&!data.confirmed)throw new Error('Marca la confirmación para rechazar la solicitud.');const id=data.id;delete data.id;delete data.confirmed;data.identity_verified=!!data.identity_verified;await api('membership/queue/'+id+'/',{method:'POST',body:data});break;}
  case 'cart-add':{const items=readCart(),product=Number(data.product),quantity=Number(data.quantity),variant=data.variant;const line=items.find(i=>i.product===product&&i.variant===variant);if(line){if(line.quantity+quantity>99)throw new Error('El máximo por variante es 99.');line.quantity+=quantity;}else{if(items.length>=20)throw new Error('El carrito admite hasta 20 selecciones.');items.push({product,variant,quantity});}saveCart(items);location.href='carrito.html';return;}
  case 'cart-recipe':await api('my-prescriptions/',{method:'POST',body:new FormData(f)});await renderCart();message('Receta privada guardada. Selecciónala para continuar.');return;
  case 'checkout':{
@@ -869,7 +875,7 @@ document.addEventListener('submit',async e=>{
  case 'quote-search':{const filter=new URLSearchParams();for(const [key,value] of Object.entries(data))if(value.trim())filter.set(key,value.trim());location.href='cotizaciones.html?'+filter;return;}
  case 'agreement-disable':{if(!data.confirmed)throw new Error('Confirma la desactivación antes de continuar.');await api('agreements/'+data.id+'/',{method:'PATCH',body:{active:false}});break;}
  case 'agreement-code':{if(!data.confirmed)throw new Error('Confirma el cambio antes de aplicarlo.');await api('agreements/'+data.id+'/manage-code/',{method:'POST',body:{operation:data.operation}});break;}
- case 'agreement-review':{if(data.approved==='false'&&!data.confirmed)throw new Error('Marca la confirmación para rechazar la solicitud.');const id=data.id;delete data.id;delete data.confirmed;await api('agreement-verifications/'+id+'/',{method:'POST',body:data});break;}
+ case 'agreement-review':{if(data.approved==='false'&&!data.confirmed)throw new Error('Marca la confirmación para rechazar la solicitud.');const id=data.id;delete data.id;delete data.confirmed;data.identity_verified=!!data.identity_verified;await api('agreement-verifications/'+id+'/',{method:'POST',body:data});break;}
  case 'agenda-block':{data.day=data.block_day;delete data.block_day;if(!data.slot)delete data.slot;await api('agenda/blocks/',{method:'POST',body:data});break;}
  case 'inquiry':data.source=params.get('origen')==='qr'?'qr':'web';if(data.kind!=='registro'){delete data.registration_rut;delete data.agreement_code;delete data.agreement_role;}data.contact_authorized=!!data.contact_authorized;data.idempotency_key=f.dataset.key;data.day=data.day||null;data.slot=data.slot||null;{const r=await api('inquiries/',{method:'POST',body:data});screen.innerHTML=head('Solicitud registrada')+note(r.detail)+`<p>Referencia: ${esc(r.reference)}</p>`+link('Volver al inicio','index.html');return;}
  case 'client':{const id=data.id;delete data.id;data.consent=!!data.consent;data.active=data.active==='true';data.agreement=data.agreement||null;await api('clients/'+(id?id+'/':''),{method:id?'PATCH':'POST',body:data});break;}
@@ -891,10 +897,10 @@ document.addEventListener('submit',async e=>{
   f.querySelector('.form-feedback').textContent=err.message;
  }finally{submit.disabled=false;delete f.dataset.busy;f.removeAttribute('aria-busy');}
 });
-document.addEventListener('click',async e=>{const b=e.target.closest('[data-op]');if(!b)return;const id=b.dataset.id;try{if(b.dataset.op.startsWith('commerce-')){await commercial.click(b);return;}switch(b.dataset.op){
+document.addEventListener('click',async e=>{const b=e.target.closest('[data-op]');if(!b)return;const id=b.dataset.id;try{if(b.dataset.op.startsWith('orgqr-')){await organizationQR.click(b);return;}if(b.dataset.op.startsWith('commerce-')){await commercial.click(b);return;}switch(b.dataset.op){
  case 'cart-remove':{const items=readCart();items.splice(Number(id),1);saveCart(items);await renderCart();break;}
  case 'purchase-detail':await purchaseDetail(id);break;
- case 'representative-review':dialog('Validar pertenencia',form('representative-review',`<input name="id" type="hidden" value="${esc(id)}">`+select('approved','Decisión',[['true','Confirmar pertenencia'],['false','Rechazar']])+input('note','Referencia interna de la verificación')+check('confirmed','Confirmo el rechazo si elegí Rechazar.')));break;
+ case 'representative-review':dialog('Validar pertenencia',form('representative-review',`<input name="id" type="hidden" value="${esc(id)}">`+select('approved','Decisión',[['true','Confirmar pertenencia'],['false','Rechazar']])+input('note','Referencia interna de la verificación')+check('identity_verified','Verifiqué la identidad y la autorización para vincular esta solicitud.')+check('confirmed','Confirmo el rechazo si elegí Rechazar.')));break;
  case 'reload':location.reload();break;
  case 'agenda-unblock':{const [day,slot]=id.split('|');await api('agenda/blocks/',{method:'POST',body:{day,...(slot?{slot}:{}),active:false}});await render();message('Bloqueo liberado.');break;}
  case 'attention-qr':await showAttentionQR();break;
@@ -908,7 +914,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('[data-op]'
   try{window.print();}catch(e){done();throw e;}
   break;
  }
- case 'inquiry-detail':{const r=await api('inquiries/'+id+'/');dialog('Solicitud #'+r.id,`<dl><dt>Solicitante</dt><dd>${esc(r.name)}</dd><dt>Contacto</dt><dd>${esc(r.phone)} · ${esc(r.email||'No informado')}</dd><dt>Tipo y origen</dt><dd>${esc(r.kind)} · ${esc(r.source==='qr'?'Código QR':'Sitio web')}</dd><dt>Recepción</dt><dd>${date(r.created_at)}</dd><dt>Atención solicitada</dt><dd>${esc(r.service)} · ${esc(r.day||'')} ${esc(r.slot||'')}</dd><dt>Motivo y observaciones</dt><dd>${esc(r.reason)}</dd><dt>Estado</dt><dd>${esc(r.status)}</dd></dl>${r.kind==='compra'?btn('Detalle de compra','purchase-detail',r.id):''}${r.agreement?`<p>Convenio ${esc(r.agreement_name||'asociado')} · ${esc(r.agreement_role)} · ${esc(r.verification_state)}</p>`:''}${r.verification_state==='pendiente'&&has('change_agreement')?btn('Validar pertenencia','agreement-review',r.id):''}${r.product?`<p>Producto de catálogo #${esc(r.product)}</p>`:''}${r.prescription&&has('view_prescription')?btn('Ver receta autorizada','file','prescriptions/'+r.prescription+'/file/'):''}${r.client?link('Revisar ficha asociada','detalle_cliente.html?cliente='+r.client):''}`);break;}
+ case 'inquiry-detail':{const r=await api('inquiries/'+id+'/');dialog('Solicitud #'+r.id,`<dl><dt>Solicitante</dt><dd>${esc(r.name)}</dd><dt>Contacto</dt><dd>${esc(r.phone)} · ${esc(r.email||'No informado')}</dd><dt>Tipo y origen</dt><dd>${esc(r.kind)} · ${esc(r.origin_label||(r.source==='qr'?'Código QR':'Sitio web'))}</dd><dt>Recepción</dt><dd>${date(r.created_at)}</dd><dt>Atención solicitada</dt><dd>${esc(r.service)} · ${esc(r.day||'')} ${esc(r.slot||'')}</dd><dt>Motivo y observaciones</dt><dd>${esc(r.reason)}</dd><dt>Estado</dt><dd>${esc(r.status)}</dd></dl>${r.kind==='compra'?btn('Detalle de compra','purchase-detail',r.id):''}${r.agreement?`<p>Convenio ${esc(r.agreement_name||'asociado')} · ${esc(r.agreement_role)} · ${esc(r.verification_state)}</p>`:''}${r.verification_state==='pendiente'&&has('change_agreement')?(r.managed_union?link('Revisar afiliación en Sindicatos','sindicatos.html'):btn('Validar pertenencia','agreement-review',r.id)):''}${r.product?`<p>Producto de catálogo #${esc(r.product)}</p>`:''}${r.prescription&&has('view_prescription')?btn('Ver receta autorizada','file','prescriptions/'+r.prescription+'/file/'):''}${r.client?link('Revisar ficha asociada','detalle_cliente.html?cliente='+r.client):''}`);break;}
  case 'logout':await api('logout/',{method:'POST',body:{}});location.href='index.html';break;
  case 'agreement-visit':{const result=await api('clients/'+id+'/agreement/',{method:'POST',body:{}});message(result.detail);break;}
  case 'agreement-new':await agreementForm();break;
@@ -918,7 +924,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('[data-op]'
   form('agreement-disable',hidden('id',id)+check('confirmed','Confirmo que deseo desactivar el convenio.'),'Desactivar convenio'));break;
  case 'agreement-code-history':{const [agreement,number]=id.split(':');await agreementCodeDialog(agreement,Number(number));break;}
  case 'agreement-qr':await showAgreementQR(id);break;
- case 'agreement-review':dialog('Validar pertenencia',form('agreement-review',`<input name="id" type="hidden" value="${esc(id)}">`+select('approved','Decisión',[['true','Aprobar'],['false','Rechazar']])+select('method','Método',[['nomina','Nómina autorizada'],['responsable','Responsable del convenio'],['presencial','Validación presencial']])+input('note','Referencia de verificación, sin datos sensibles')+check('confirmed','Confirmo el rechazo si elegí Rechazar.')));break;
+ case 'agreement-review':dialog('Validar pertenencia',form('agreement-review',`<input name="id" type="hidden" value="${esc(id)}">`+select('approved','Decisión',[['true','Aprobar'],['false','Rechazar']])+select('method','Método',[['nomina','Nómina autorizada'],['responsable','Responsable del convenio'],['presencial','Validación presencial']])+input('note','Referencia de verificación, sin datos sensibles')+check('identity_verified','Verifiqué la identidad y la autorización para vincular esta solicitud.')+check('confirmed','Confirmo el rechazo si elegí Rechazar.')));break;
  case 'request-product':await productRequestForm(id);break;
 
  case 'union-new':showUnionForm();break;

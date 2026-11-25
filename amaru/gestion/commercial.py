@@ -35,7 +35,7 @@ class BenefitSerializer(serializers.ModelSerializer):
     class Meta:
         model = AgreementBenefit
         fields = ['id', 'name', 'agreement', 'agreement_name', 'description', 'kind', 'value', 'products',
-                  'category', 'starts_on', 'ends_on', 'role', 'conditions', 'active']
+                  'category', 'starts_on', 'ends_on', 'role', 'conditions', 'active', 'public_visible']
 
     def validate(self, data):
         def value(key):

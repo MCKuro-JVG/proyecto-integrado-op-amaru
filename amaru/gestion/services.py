@@ -132,7 +132,7 @@ def _accept_receipt_atomic(order_id,user,accepted,signature,attempt,terms,expect
 
 
 @transaction.atomic
-def receive_inquiry(data, actor, *, submitted_code=None):
+def receive_inquiry(data, actor, *, submitted_code=None, organization_qr=None):
     """Entrada pública: no cambia fichas existentes ni crea cuentas de usuario."""
     from datetime import timedelta
     from rest_framework.exceptions import APIException
@@ -153,25 +153,34 @@ def receive_inquiry(data, actor, *, submitted_code=None):
     if Inquiry.objects.filter(**fields,created_at__gte=timezone.now()-timedelta(minutes=5)).exclude(status__in=['Cerrada','Cancelada']).exists():
         raise Conflict('Ya se recibió una solicitud equivalente recientemente. Espere antes de repetirla.')
     defaults = dict(data)
+    defaults['origin'] = ('qr_general' if data.get('source') == 'qr' else 'manual_code' if submitted_code
+        else 'administrative' if actor and actor.is_authenticated and actor.has_perm('gestion.view_inquiry') else 'web')
     if data.get("agreement"):
         agreement = Agreement.objects.select_for_update().get(pk=data["agreement"].pk)
-        if (not agreement.code_available
+        if organization_qr:
+            from .organization_qr import validate_qr
+            validate_qr(agreement, **organization_qr)
+            defaults['origin'] = 'qr_worker' if organization_qr['purpose'] == 'worker' else 'qr_inquiry'
+            defaults['privacy_accepted_at'] = timezone.now()
+        elif (not agreement.code_available
                 or (submitted_code is not None and agreement.code != submitted_code)
                 or (data.get("agreement_role") == "carga" and not agreement.allow_dependents)):
             raise Conflict("El convenio ya no está disponible para este registro.")
-        defaults["verification_state"] = "pendiente"
+        if data['kind'] == 'registro':
+            defaults["verification_state"] = "pendiente"
     obj,created=Inquiry.objects.get_or_create(idempotency_key=data['idempotency_key'],defaults=defaults)
     if not created:
         if any(getattr(obj,key)!=value for key,value in data.items()):
             raise Conflict('La referencia de envío ya fue utilizada con otros datos. Recargue el formulario.')
         return obj,False
-    if obj.kind=='registro':
+    if obj.kind=='registro' and not organization_qr:
         client,new=Client.objects.get_or_create(rut=obj.registration_rut,defaults={
             'name':obj.name,'phone':obj.phone,'email':obj.email,'category':'particular','consent':False,'active':False})
         obj.client=client;obj.save(update_fields=['client'])
         if new: audit(actor,'Ficha pública pendiente de revisión; sin cuenta autenticada',client)
     if obj.kind=='agenda': AppointmentReservation.objects.create(inquiry=obj,day=obj.day,slot=obj.slot)
     if obj.agreement_id:
-        audit(actor, 'Código de convenio: solicitud recibida', obj.agreement)
+        audit(actor, ('QR de organización: registro recibido' if obj.kind == 'registro' else 'QR de organización: consulta recibida')
+              if organization_qr else 'Código de convenio: solicitud recibida', obj.agreement)
     audit(actor,'Solicitud pública recibida: '+obj.source,obj)
     return obj,True

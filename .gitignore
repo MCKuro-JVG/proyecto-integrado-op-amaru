@@ -85,3 +85,4 @@ node_modules/
 
 # Consultas de esquema de demostracion sin datos ni credenciales
 !docs/consultas_demostracion_qr.sql
+!docs/consultas_qr_organizaciones.sql

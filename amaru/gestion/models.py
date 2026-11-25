@@ -5,6 +5,10 @@ from django.conf import settings
 from django.utils import timezone
 from .validators import validate_rut,validate_document,normalize_rut
 from .storage import private_storage, public_storage
+
+ENTRY_ORIGINS = [('web', 'Sitio web'), ('qr_general', 'QR de atención general'),
+    ('qr_worker', 'Registro mediante QR'), ('qr_inquiry', 'Consulta mediante QR'),
+    ('administrative', 'Registro administrativo'), ('manual_code', 'Código manual')]
 def document_path(instance,filename):
     return f'recetas/{instance.client_id}/{uuid.uuid4().hex}{Path(filename).suffix.lower()}'
 class Agreement(models.Model):
@@ -12,6 +16,10 @@ class Agreement(models.Model):
     active = models.BooleanField('activo', default=True)
     code = models.CharField(max_length=24, unique=True, null=True, blank=True, editable=False)
     code_enabled = models.BooleanField(default=True)
+    worker_qr_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    inquiry_qr_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    worker_qr_enabled = models.BooleanField(default=True)
+    inquiry_qr_enabled = models.BooleanField(default=True)
     starts_on = models.DateField(null=True, blank=True)
     ends_on = models.DateField(null=True, blank=True)
     contact_name = models.CharField(max_length=180, blank=True)
@@ -314,6 +322,10 @@ class Inquiry(models.Model):
     token=models.UUIDField(default=uuid.uuid4,unique=True,editable=False)
     idempotency_key=models.UUIDField(unique=True)
     source=models.CharField(max_length=10,choices=[('web','Sitio web'),('qr','Código QR')],default='web')
+    origin = models.CharField(max_length=20, choices=ENTRY_ORIGINS, default='web')
+    privacy_version = models.CharField(max_length=24, blank=True)
+    privacy_accepted_at = models.DateTimeField(null=True, blank=True)
+    union_membership = models.OneToOneField('UnionMembership', on_delete=models.PROTECT, null=True, blank=True, related_name='registration_inquiry')
     registration_rut=models.CharField(max_length=12,blank=True)
     client=models.ForeignKey(Client,on_delete=models.PROTECT,null=True,blank=True,related_name='inquiries')
     product = models.ForeignKey(Product, on_delete=models.PROTECT, null=True, blank=True)
@@ -341,7 +353,8 @@ class Inquiry(models.Model):
     created_at=models.DateTimeField(auto_now_add=True)
     updated_at=models.DateTimeField(auto_now=True)
     class Meta:
-        indexes=[models.Index(fields=['status','created_at'],name='inquiry_status_date')]
+        indexes=[models.Index(fields=['status','created_at'],name='inquiry_status_date'),
+                 models.Index(fields=['agreement','origin','kind','created_at'],name='inquiry_org_origin')]
 
 
 class PurchaseLine(models.Model):
@@ -434,6 +447,7 @@ class UnionMembership(models.Model):
     phone = models.CharField(max_length=30)
     role = models.CharField(max_length=10, choices=[('titular', 'Titular'), ('carga', 'Carga familiar')])
     state = models.CharField(max_length=10, choices=State, default=State.PENDING)
+    origin = models.CharField(max_length=20, choices=ENTRY_ORIGINS, default='administrative')
     created_at = models.DateTimeField(auto_now_add=True)
     changed_at = models.DateTimeField(auto_now=True)
     verified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name='+')
@@ -565,6 +579,7 @@ class AgreementBenefit(models.Model):
     role = models.CharField(max_length=10, choices=[('all', 'Titular y cargas'), ('titular', 'Titular'), ('carga', 'Carga familiar')], default='all')
     conditions = models.TextField(max_length=2000, blank=True)
     active = models.BooleanField(default=False)
+    public_visible = models.BooleanField('Autorizado para publicación en QR de consultas', default=False)
 
     class Meta:
         indexes = [models.Index(fields=['agreement', 'active'], name='benefit_agreement_active')]

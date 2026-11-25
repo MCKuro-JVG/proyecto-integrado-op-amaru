@@ -164,3 +164,10 @@ form[aria-busy="true"] .form-feedback::before { content: ""; display: inline-blo
  .checkout-steps li { flex: 1 1 100%; padding: 8px 12px; }
  .cart-product img { width: 56px; height: 50px; }
 }
+.organization-qr-cards { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; margin:20px 0; }
+.organization-qr-cards .panel { min-width:0; }
+.organization-qr-image { display:block; width:256px; max-width:100%; height:auto; margin:16px auto; object-fit:contain; }
+.organization-qr-dialog { text-align:center; }
+.organization-qr-dialog.enlarged .organization-qr-image { width:min(70vw,520px); }
+.organization-benefit { border-bottom:1px solid var(--amaru-soft,#ffd8d2); padding:12px 0; }
+@media(max-width:800px) { .organization-qr-cards { grid-template-columns:minmax(0,1fr); } }

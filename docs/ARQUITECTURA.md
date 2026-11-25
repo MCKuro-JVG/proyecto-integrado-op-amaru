@@ -63,3 +63,7 @@ La agenda registra solicitudes, no confirma citas con la empresa ni envía mensa
 # Ampliación comercial de noviembre de 2026
 
 Se amplían Product, Inventory y Quote mediante la migración 0014. ProductVariant separa variantes y códigos de producto, StockMovement conserva el Kardex y StockReservation protege existencias por cotización. AgreementBenefit define condiciones y Quote conserva el cálculo confirmado. TransferPayment, PaymentVoucher y PaymentReview separan pago, evidencia privada y decisiones del personal. La salida física se integra a la transacción existente de entrega. [Diseño y operación de los módulos](COMERCIO_INVENTARIO.md).
+
+## Dos QR de organización
+
+La migración 0017 amplía modelos existentes sin crear tablas. Agreement guarda dos UUID independientes y sus estados de habilitación. Inquiry conserva la organización, finalidad, origen, consentimiento y relación 1:1 opcional con UnionMembership. El QR de registro crea una solicitud de afiliación pendiente, no reclama una ficha por RUT ni concede acceso. El QR de consultas no crea usuarios ni afiliaciones. La revisión y las invitaciones individuales continúan en los módulos existentes. Los beneficios públicos necesitan autorización explícita. [API, seguridad y flujo](QR_ORGANIZACIONES.md).

@@ -47,7 +47,8 @@ window.AmaruCommercial=function(ctx){
     select('category','Categoría aplicable',[['','Todas'],...options(categories.results)],b.category)+
     '<div class="field wide"><label for="benefit-products">Productos aplicables (sin selección, todos)</label><select id="benefit-products" name="products" multiple>'+products.results.map(p=>'<option value="'+p.id+'" '+(b.products?.includes(p.id)?'selected':'')+'>'+esc(p.name)+'</option>').join('')+'</select></div>'+
     input('starts_on','Fecha de inicio','date',b.starts_on,'')+input('ends_on','Fecha de término','date',b.ends_on,'')+area('conditions','Condiciones de utilización',b.conditions)+
-    select('active','Estado',[['false','Inactivo'],['true','Activo']],String(b.active??false))));
+    select('active','Estado',[['false','Inactivo'],['true','Activo']],String(b.active??false))+
+    select('public_visible','Publicación en QR de consultas',[['false','Privado: no publicar'],['true','Autorizado para mostrar públicamente']],String(b.public_visible??false))));
  }
 
  async function inventoryPage(){
@@ -191,7 +192,7 @@ window.AmaruCommercial=function(ctx){
     location.href=(kind==='commerce-payment-search'?'pagos':'inventario')+'.html?'+query;return;
    }
    if(kind==='commerce-benefit'){
-    const id=data.id;delete data.id;data.active=data.active==='true';data.value=data.value===''?null:data.value;data.category=data.category||null;
+    const id=data.id;delete data.id;data.active=data.active==='true';data.public_visible=data.public_visible==='true';data.value=data.value===''?null:data.value;data.category=data.category||null;
     data.starts_on=data.starts_on||null;data.ends_on=data.ends_on||null;data.products=new FormData(f).getAll('products').map(Number);
     await api('benefits/'+(id?id+'/':''),{method:id?'PATCH':'POST',body:data});close();await benefitsPage();
    }else if(kind==='commerce-master'){

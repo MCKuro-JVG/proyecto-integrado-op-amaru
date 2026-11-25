@@ -502,6 +502,7 @@ class Agreements(Records):
 
 class VerificationInput(serializers.Serializer):
     approved = serializers.BooleanField()
+    identity_verified = serializers.BooleanField(default=False)
     method = serializers.ChoiceField(choices=['nomina', 'responsable', 'presencial'])
     note = serializers.CharField(max_length=500, min_length=5)
 
@@ -538,9 +539,27 @@ def review_membership(user, pk, values, organization_id=None):
                 raise ValidationError('Gestiona la vinculación desde el Panel del Sindicato.')
             if not agreement.available or (inquiry.agreement_role == 'carga' and not agreement.allow_dependents):
                 raise ValidationError('El convenio no admite esta aprobación actualmente.')
-            client = get_object_or_404(Client.objects.select_for_update(), pk=inquiry.client_id)
+            if inquiry.origin == 'qr_worker' and not values.get('identity_verified'):
+                raise ValidationError('Verifica expresamente la identidad y la autorización de vinculación antes de aprobar.')
+            if inquiry.client_id:
+                client = get_object_or_404(Client.objects.select_for_update(), pk=inquiry.client_id)
+            elif inquiry.origin == 'qr_worker':
+                if not user.has_perm('gestion.change_client'):
+                    raise PermissionDenied('Ópticas Amaru debe verificar y asociar la ficha antes de aprobar.')
+                client = Client.objects.select_for_update().filter(rut=inquiry.registration_rut).first()
+                if client and not client.active:
+                    raise ValidationError('La ficha existente está inactiva. Requiere su revisión independiente.')
+                if client is None:
+                    client = Client.objects.create(rut=inquiry.registration_rut, name=inquiry.name, phone=inquiry.phone,
+                        email=inquiry.email, category='convenio', agreement=agreement, consent=False)
+                    audit(user, 'Ficha creada tras verificar registro QR e identidad', client)
+                inquiry.client = client
+            else:
+                raise ValidationError('La solicitud necesita una ficha verificada.')
             if client.agreement_id and client.agreement_id != agreement.pk:
                 raise VerificationConflict('La ficha tiene otro convenio. Revisa la vinculación antes de aprobar.')
+            if inquiry.origin == 'qr_worker' and client.union_memberships.filter(state='active').exists():
+                raise VerificationConflict('La ficha tiene una afiliación sindical activa. Revisa el traslado por separado.')
             client.agreement = agreement
             client.category = 'convenio'
             client.save(update_fields=['agreement', 'category', 'updated_at'])
@@ -549,7 +568,7 @@ def review_membership(user, pk, values, organization_id=None):
         inquiry.verification_note = values['note']
         inquiry.verified_by = user
         inquiry.verified_at = timezone.now()
-        inquiry.save(update_fields=['verification_state', 'verification_method', 'verification_note', 'verified_by', 'verified_at', 'updated_at'])
+        inquiry.save(update_fields=['client', 'verification_state', 'verification_method', 'verification_note', 'verified_by', 'verified_at', 'updated_at'])
         audit(user, 'Verificación de convenio: ' + inquiry.verification_state, inquiry)
     return inquiry
 

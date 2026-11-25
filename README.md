@@ -230,3 +230,7 @@ Consulta [el proceso, las tablas, los permisos y la demostración](docs/COMERCIO
 # Checkout académico desde el carrito
 
 El recorrido de compra y comprobante está integrado en **Mi carrito → Continuar al pago → Transferencia bancaria → Enviar comprobante de pago**. Los productos requieren precio habilitado y stock; las recetas y precios pendientes mantienen la revisión del personal. Consulta [el proceso, permisos y pruebas](docs/CHECKOUT_ACADEMICO.md). La transferencia es exclusivamente simulada y los datos bancarios son inoperativos.
+
+## Dos QR por convenio y sindicato
+
+Desde **Códigos QR de atención**, cada organización dispone de un QR para registrar trabajadores pendientes de validación y otro para consultas sin crear cuentas. Los enlaces identifican la organización automáticamente; el listado y los contadores se actualizan desde Django. El representante comparte únicamente los de su institución. Consulta [el funcionamiento, las tablas y la revisión](docs/QR_ORGANIZACIONES.md). Conocer el QR nunca concede beneficios ni permite reclamar una ficha existente.

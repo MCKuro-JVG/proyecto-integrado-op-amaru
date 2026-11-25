@@ -53,7 +53,7 @@ def queue(request):
     if representative is None or not representative.agreement.available or hasattr(representative.agreement, 'union'):
         raise PermissionDenied()
     rows = Inquiry.objects.filter(agreement=representative.agreement).exclude(verification_state='').order_by('-created_at', '-pk')[:100]
-    return Response({'organization': representative.agreement.name, 'requests': [summary(row) for row in rows]})
+    return Response({'organization': representative.agreement.name, 'organization_id': representative.agreement_id, 'requests': [summary(row) for row in rows]})
 
 
 def summary(row):

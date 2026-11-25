@@ -116,3 +116,11 @@ El registro sindical ahora devuelve el RUT inválido como error HTTP 400 y muest
 La ejecución general aprobó 145 pruebas contra MariaDB. Después de incorporar la cancelación trazable, se aprobaron 30 pruebas focalizadas de comercio, permisos y filtros, incluidas dos adicionales de cancelación. La regresión comprueba las entregas de órdenes anteriores sin reservas. Los registros y capturas de ejecución permanecen en `.tools/backend-qa/commercial`, fuera de GitHub.
 
 Se conserva el modo académico, con datos bancarios inoperativos, beneficios ficticios y archivos de comprobante privados. Las condiciones comerciales y su uso real requieren aprobación de la empresa. Esta ampliación no verifica nuevamente R2 remoto en alwaysdata.
+
+## Dos QR de organización — 25 de noviembre de 2026
+
+Se implementaron QR independientes de registro de trabajadores y consultas, con relación automática a cada convenio o sindicato. La migración 0017 amplía modelos existentes y conserva 49 tablas locales. Se respaldó MariaDB antes de aplicarla. Los registros permanecen pendientes de validar identidad y pertenencia; no se reclaman fichas por RUT ni se crean cuentas con el QR de consultas. [Flujo y tablas](QR_ORGANIZACIONES.md).
+
+Se ejecutó la suite completa contra MariaDB con R2 desactivado: **178 pruebas aprobadas**, incluidas 20 nuevas sobre QR, permisos, duplicados, concurrencia, afiliación, privacidad y agenda. Chrome local comprobó dos organizaciones ficticias, cuatro imágenes QR decodificadas, dos registros, dos consultas, actualización automática sin recargar, revocación independiente y cinco anchos (1920, 1366, 768, 390 y 360 px), sin errores de JavaScript ni desbordamiento horizontal. Esto no constituye escaneo con un teléfono físico. Las evidencias privadas se conservan en `.tools/backend-qa/qr-dual`.
+
+La verificación pública se realiza después de activar y recargar cada versión WSGI: comparar hashes, probar ambos formularios desde HTTPS y consultar la base remota. El resultado local no sustituye esa comprobación.

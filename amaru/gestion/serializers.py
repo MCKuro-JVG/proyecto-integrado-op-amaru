@@ -179,13 +179,15 @@ class WarrantySerializer(serializers.ModelSerializer):
 
 
 class InquirySerializer(serializers.ModelSerializer):
+    origin_label = serializers.CharField(source='get_origin_display', read_only=True)
+    managed_union = serializers.BooleanField(source='agreement.has_managed_union', read_only=True, default=False)
     agreement_code = serializers.CharField(required=False, allow_blank=True, max_length=24, write_only=True)
     agreement_name = serializers.CharField(source='agreement.name', read_only=True, allow_null=True)
     website=serializers.CharField(required=False,allow_blank=True,write_only=True,max_length=200)
     class Meta:
         model=Inquiry
-        fields=['id','token','idempotency_key','kind','name','phone','email','service','reason','contact_authorized','day','slot','status','created_at','source','registration_rut','client','product','prescription','agreement_code','agreement','agreement_name','agreement_role','verification_state','verification_method','verification_note','verified_at','website']
-        read_only_fields=['token','status','created_at','client','product','prescription','agreement','verification_state','verification_method','verification_note','verified_at']
+        fields=['id','token','idempotency_key','kind','name','phone','email','service','reason','contact_authorized','day','slot','status','created_at','source','origin','origin_label','registration_rut','client','product','prescription','agreement_code','agreement','agreement_name','managed_union','agreement_role','verification_state','verification_method','verification_note','verified_at','website']
+        read_only_fields=['token','status','created_at','client','product','prescription','agreement','origin','verification_state','verification_method','verification_note','verified_at']
         extra_kwargs={'idempotency_key':{'validators':[]},'email':{'required':False,'allow_blank':True},'reason':{'trim_whitespace':True}}
     def validate(self,data):
         if data.pop('website',''): raise serializers.ValidationError('No se pudo registrar la solicitud.')

@@ -72,7 +72,7 @@ def summary(union):
     agreement = union.agreement
     document = union.documents.order_by('-version').first()
     return {
-        'id': union.pk, 'name': agreement.name, 'identifier': union.identifier,
+        'id': union.pk, 'agreement_id': agreement.pk, 'name': agreement.name, 'identifier': union.identifier,
         'state': union.state, 'available': agreement_open(union), 'starts_on': agreement.starts_on,
         'ends_on': agreement.ends_on, 'contact_name': agreement.contact_name,
         'contact_email': agreement.contact_email, 'institutional_details': union.institutional_details,
@@ -315,7 +315,7 @@ def worker_summary(row):
     return {'id': row.pk, 'name': row.name, 'rut': row.rut, 'email': row.email,
             'phone': row.phone, 'role': row.role, 'state': row.state, 'accepted_at': row.accepted_at,
             'recovery_requested_at': row.recovery_requested_at, 'created_at': row.created_at,
-            'organization': row.union.agreement.name,
+            'organization': row.union.agreement.name, 'origin': row.origin, 'origin_label': row.get_origin_display(),
             'account_state': 'Activa' if row.client_id and row.client.user_id and row.client.user.is_active else 'Pendiente de activación'}
 
 
@@ -453,11 +453,21 @@ def safe_personal_user(user):
 
 
 def activate_membership(row):
-    Client.objects.select_for_update().get(pk=row.client_id)
+    client = Client.objects.select_for_update().get(pk=row.client_id)
+    if row.origin == 'qr_worker':
+        if client.agreement_id and client.agreement_id != row.union.agreement_id:
+            raise ValidationError('La ficha tiene otro convenio. Revisa el traslado por separado antes de aprobar.')
+        client.category, client.agreement = 'convenio', row.union.agreement
+        client.save(update_fields=['category', 'agreement', 'updated_at'])
     if UnionMembership.objects.filter(client_id=row.client_id, state=UnionMembership.State.ACTIVE).exclude(pk=row.pk).exists():
         raise ValidationError('El titular ya tiene una afiliación activa. Revisa el traslado antes de activar.')
     row.state = UnionMembership.State.ACTIVE
     row.save(update_fields=['client', 'state', 'accepted_at', 'verified_by', 'verification_note', 'changed_at'])
+    if row.origin == 'qr_worker':
+        from .models import Inquiry
+        Inquiry.objects.filter(union_membership=row).update(client=row.client, verification_state='aprobada',
+            verification_method='admin', verification_note=row.verification_note,
+            verified_by=row.verified_by, verified_at=timezone.now())
 
 
 class ClaimInput(serializers.Serializer):
@@ -545,8 +555,12 @@ def accept_worker(request, union, invitation, values, now):
     set_password(account, values.get('password', ''))
     account.groups.add(Group.objects.get_or_create(name='Cliente')[0])
     row.client = Client.objects.create(rut=row.rut, name=row.name, email=row.email, phone=row.phone,
-                                       category='particular', user=account)
+                                       category='convenio' if row.origin == 'qr_worker' else 'particular',
+                                       agreement=union.agreement if row.origin == 'qr_worker' else None, user=account)
     row.accepted_at = now
+    if row.origin == 'qr_worker':
+        row.save(update_fields=['client', 'accepted_at', 'changed_at'])
+        return 'review'
     row.verified_by = invitation.created_by
     activate_membership(row)
     return 'activated'
@@ -584,6 +598,7 @@ def admin_workers(request, pk):
 def review_queue(request):
     admin_only(request.user)
     rows = UnionMembership.objects.filter(
-        Q(state=UnionMembership.State.PENDING, accepted_at__isnull=False) | Q(recovery_requested_at__isnull=False)
+        Q(state=UnionMembership.State.PENDING, accepted_at__isnull=False) |
+        Q(state=UnionMembership.State.PENDING, origin='qr_worker') | Q(recovery_requested_at__isnull=False)
     ).select_related('union__agreement','client__user').order_by('-changed_at')[:200]
     return private([{**worker_summary(row), 'organization': row.union.agreement.name} for row in rows])

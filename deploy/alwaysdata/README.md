@@ -105,3 +105,7 @@ Se conserva el esquema de static-releases por versión Git y recarga explícita 
 # Checkout integrado
 
 La migración 0016 agrega la habilitación de precio académico directo en Product, inicialmente desactivada. Respalda MariaDB, revisa el plan y aplica la migración antes de activar la versión WSGI. El seed académico habilita solo los accesorios ficticios. Conserva el almacenamiento privado de comprobantes. Verifica desde Chrome el recorrido completo de `/app/carrito.html` siguiendo [la documentación del checkout](../../docs/CHECKOUT_ACADEMICO.md).
+
+## Dos QR por organización
+
+La migración 0017 añade campos a los modelos existentes y no crea tablas. Respaldar antes de aplicarla. Recopilar también `organization_qr.js` en la nueva versión de estáticos y recargar WSGI junto con el código correspondiente; los hashes del HTML evitan reutilizar scripts anteriores. Revisar las URLs de registro y consulta de una organización ficticia desde HTTPS y comprobar sus registros en MariaDB. [Procedimiento y límites](../../docs/QR_ORGANIZACIONES.md).
