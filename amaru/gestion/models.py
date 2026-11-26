@@ -14,17 +14,21 @@ def document_path(instance,filename):
 class Agreement(models.Model):
     name = models.CharField('empresa / sindicato', max_length=180, unique=True)
     active = models.BooleanField('activo', default=True)
-    code = models.CharField(max_length=24, unique=True, null=True, blank=True, editable=False)
-    code_enabled = models.BooleanField(default=True)
-    worker_qr_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-    inquiry_qr_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-    worker_qr_enabled = models.BooleanField(default=True)
-    inquiry_qr_enabled = models.BooleanField(default=True)
-    starts_on = models.DateField(null=True, blank=True)
-    ends_on = models.DateField(null=True, blank=True)
-    contact_name = models.CharField(max_length=180, blank=True)
-    contact_email = models.EmailField(blank=True)
-    allow_dependents = models.BooleanField(default=False)
+    code = models.CharField('código', max_length=24, unique=True, null=True, blank=True, editable=False)
+    code_enabled = models.BooleanField('código habilitado', default=True)
+    worker_qr_token = models.UUIDField('referencia del QR de registro', default=uuid.uuid4, unique=True, editable=False)
+    inquiry_qr_token = models.UUIDField('referencia del QR de consultas', default=uuid.uuid4, unique=True, editable=False)
+    worker_qr_enabled = models.BooleanField('QR de registro habilitado', default=True)
+    inquiry_qr_enabled = models.BooleanField('QR de consultas habilitado', default=True)
+    starts_on = models.DateField('inicio de vigencia', null=True, blank=True)
+    ends_on = models.DateField('fin de vigencia', null=True, blank=True)
+    contact_name = models.CharField('nombre del contacto', max_length=180, blank=True)
+    contact_email = models.EmailField('correo de contacto', blank=True)
+    allow_dependents = models.BooleanField('admite cargas familiares', default=False)
+
+    class Meta:
+        verbose_name = 'convenio'
+        verbose_name_plural = 'convenios'
 
     @property
     def has_managed_union(self):
@@ -52,9 +56,13 @@ class Agreement(models.Model):
 
 
 class AgreementRepresentative(models.Model):
-    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='agreement_representative')
-    agreement = models.ForeignKey(Agreement, on_delete=models.PROTECT)
-    active = models.BooleanField(default=True)
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, verbose_name='cuenta de usuario', on_delete=models.CASCADE, related_name='agreement_representative')
+    agreement = models.ForeignKey(Agreement, verbose_name='convenio', on_delete=models.PROTECT)
+    active = models.BooleanField('activo', default=True)
+
+    class Meta:
+        verbose_name = 'representante de convenio'
+        verbose_name_plural = 'representantes de convenios'
 
 
 class Client(models.Model):
@@ -66,11 +74,15 @@ class Client(models.Model):
     category=models.CharField('tipo de cliente',max_length=20,choices=CATEGORY)
     agreement=models.ForeignKey(Agreement,on_delete=models.PROTECT,null=True,blank=True,verbose_name='empresa / sindicato')
     consent=models.BooleanField('Autorizo el uso de mi teléfono y correo para posventa y promociones',default=False)
-    consent_at=models.DateTimeField(default=timezone.now)
-    created_at=models.DateTimeField(auto_now_add=True)
-    user=models.OneToOneField(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,blank=True)
-    active=models.BooleanField(default=True)
-    updated_at=models.DateTimeField(auto_now=True)
+    consent_at=models.DateTimeField('fecha de consentimiento', default=timezone.now)
+    created_at=models.DateTimeField('fecha de creación', auto_now_add=True)
+    user=models.OneToOneField(settings.AUTH_USER_MODEL, verbose_name='cuenta de usuario',on_delete=models.SET_NULL,null=True,blank=True)
+    active=models.BooleanField('activo', default=True)
+    updated_at=models.DateTimeField('última actualización', auto_now=True)
+
+    class Meta:
+        verbose_name = 'cliente'
+        verbose_name_plural = 'clientes'
     def save(self,*args,**kwargs):
         self.rut=normalize_rut(self.rut)
         super().save(*args,**kwargs)
@@ -78,7 +90,7 @@ class Client(models.Model):
 
 class ClientRegistration(models.Model):
     """Solicitud privada; una coincidencia de RUT no prueba la identidad."""
-    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='client_registration')
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, verbose_name='cuenta de usuario', on_delete=models.PROTECT, related_name='client_registration')
     rut = models.CharField('RUT', max_length=12, unique=True)
     email = models.EmailField('correo', max_length=150, unique=True)
     name = models.CharField('nombre', max_length=180)
@@ -92,8 +104,8 @@ class ClientRegistration(models.Model):
     verification_note = models.CharField('referencia interna de verificación', max_length=240, blank=True)
 
     class Meta:
-        verbose_name = 'solicitud de cuenta de cliente'
-        verbose_name_plural = 'solicitudes de cuentas de clientes'
+        verbose_name = 'solicitud de activación de cuenta'
+        verbose_name_plural = 'solicitudes de activación de cuentas'
         ordering = ['-created_at', '-pk']
 
     def __str__(self):
@@ -101,18 +113,26 @@ class ClientRegistration(models.Model):
 
 
 class Consent(models.Model):
-    client=models.ForeignKey(Client,on_delete=models.PROTECT,related_name='consents')
-    authorized=models.BooleanField()
-    at=models.DateTimeField(auto_now_add=True)
-    actor=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True)
+    client=models.ForeignKey(Client, verbose_name='cliente',on_delete=models.PROTECT,related_name='consents')
+    authorized=models.BooleanField('autorizado')
+    at=models.DateTimeField('fecha y hora', auto_now_add=True)
+    actor=models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name='usuario responsable',on_delete=models.SET_NULL,null=True)
+
+    class Meta:
+        verbose_name = 'consentimiento'
+        verbose_name_plural = 'consentimientos'
 class Prescription(models.Model):
     client=models.ForeignKey(Client,on_delete=models.PROTECT,related_name='prescriptions',verbose_name='cliente')
     issued_on=models.DateField('fecha de emisión')
     file=models.FileField('receta JPG / PNG / PDF (máximo 10 MB)',upload_to=document_path,storage=private_storage,validators=[validate_document])
-    updated_at=models.DateTimeField(auto_now=True)
-    created_at=models.DateTimeField(auto_now_add=True)
-    actor=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True)
+    updated_at=models.DateTimeField('última actualización', auto_now=True)
+    created_at=models.DateTimeField('fecha de creación', auto_now_add=True)
+    actor=models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name='usuario responsable',on_delete=models.SET_NULL,null=True)
     physical_reference=models.CharField('referencia de archivo físico (si corresponde)',max_length=180,blank=True)
+
+    class Meta:
+        verbose_name = 'receta óptica'
+        verbose_name_plural = 'recetas ópticas'
     @property
     def expires_on(self):
         validity_days = getattr(settings, "PRESCRIPTION_VALIDITY_DAYS", None)
@@ -132,10 +152,14 @@ class Inventory(models.Model):
     category=models.CharField('categoría',max_length=20,choices=CATEGORY)
     quantity=models.PositiveIntegerField('stock disponible',default=0)
     notes=models.TextField('observaciones',blank=True)
-    variant=models.OneToOneField('ProductVariant',on_delete=models.PROTECT,null=True,blank=True,related_name='stock')
-    minimum=models.PositiveIntegerField(default=0)
-    location=models.CharField(max_length=120,blank=True)
-    unit_cost=models.DecimalField(max_digits=12,decimal_places=0,null=True,blank=True)
+    variant=models.OneToOneField('ProductVariant', verbose_name='variante',on_delete=models.PROTECT,null=True,blank=True,related_name='stock')
+    minimum=models.PositiveIntegerField('stock mínimo', default=0)
+    location=models.CharField('ubicación', max_length=120,blank=True)
+    unit_cost=models.DecimalField('costo unitario', max_digits=12,decimal_places=0,null=True,blank=True)
+
+    class Meta:
+        verbose_name = 'existencia de inventario'
+        verbose_name_plural = 'existencias de inventario'
     def __str__(self): return f'{self.name} · stock {self.quantity}'
 class ProductBase(models.Model):
     TYPES=[('seguridad','Lente de seguridad'),('particular','Lente particular')]
@@ -144,12 +168,12 @@ class ProductBase(models.Model):
     product_type=models.CharField('tipo de lente',max_length=20,choices=TYPES)
     category=models.CharField('tipo de atención',max_length=20,choices=Client.CATEGORY)
     agreement=models.ForeignKey(Agreement,on_delete=models.PROTECT,null=True,blank=True,verbose_name='empresa / sindicato')
-    characteristics=models.JSONField(default=dict)
+    characteristics=models.JSONField('características', default=dict)
     notes=models.TextField('observaciones',blank=True)
-    actor=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True)
-    created_at=models.DateTimeField(auto_now_add=True)
-    updated_at=models.DateTimeField(auto_now=True)
-    token=models.UUIDField(default=uuid.uuid4,unique=True,editable=False)
+    actor=models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name='usuario responsable',on_delete=models.SET_NULL,null=True)
+    created_at=models.DateTimeField('fecha de creación', auto_now_add=True)
+    updated_at=models.DateTimeField('última actualización', auto_now=True)
+    token=models.UUIDField('referencia de acceso', default=uuid.uuid4,unique=True,editable=False)
     class Meta: abstract=True
     @property
     def folio(self): return f'{self.PREFIX}-{self.pk:06d}-{self.token.hex[:12].upper()}'
@@ -161,28 +185,36 @@ class ProductBase(models.Model):
         return [(labels.get(k,k),('Sí' if v else 'No') if isinstance(v,bool) else values.get(v,v)) for k,v in self.characteristics.items()]
 class Request(ProductBase):
     PREFIX='SOL'
-    status=models.CharField(max_length=50,default='Recibida')
+    status=models.CharField('estado', max_length=50,default='Recibida')
     exam_requested=models.BooleanField('Solicitar nueva receta / examen',default=False)
-    submitted_contact=models.JSONField(default=dict)
-    submitted_consent=models.BooleanField(default=False)
+    submitted_contact=models.JSONField('contacto informado', default=dict)
+    submitted_consent=models.BooleanField('consentimiento informado', default=False)
+
+    class Meta:
+        verbose_name = 'solicitud de atención'
+        verbose_name_plural = 'solicitudes de atención'
 class Quote(ProductBase):
     PREFIX='COT'
     amount=models.DecimalField('total CLP',max_digits=12,decimal_places=0)
     approved=models.BooleanField('Cotización aprobada por el cliente',default=False)
-    request=models.OneToOneField(Request,on_delete=models.PROTECT,null=True,blank=True)
-    original_amount=models.DecimalField(max_digits=12,decimal_places=0,null=True,blank=True)
-    benefit_snapshot=models.JSONField(default=dict,blank=True)
-    confirmed_at=models.DateTimeField(null=True,blank=True)
-    confirmed_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,null=True,blank=True,related_name='+')
+    request=models.OneToOneField(Request, verbose_name='solicitud',on_delete=models.PROTECT,null=True,blank=True)
+    original_amount=models.DecimalField('monto original', max_digits=12,decimal_places=0,null=True,blank=True)
+    benefit_snapshot=models.JSONField('beneficio aplicado', default=dict,blank=True)
+    confirmed_at=models.DateTimeField('fecha de confirmación', null=True,blank=True)
+    confirmed_by=models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name='confirmado por',on_delete=models.PROTECT,null=True,blank=True,related_name='+')
     class Meta:
+        verbose_name = 'cotización'
+        verbose_name_plural = 'cotizaciones'
         constraints=[models.CheckConstraint(condition=models.Q(amount__gte=0),name='quote_amount_nonnegative')]
 class Order(ProductBase):
     PREFIX='OT'
     STATES=[(s,s) for s in ['Registrada','En fabricación','Control de calidad','Disponible para retiro','Entregada','Cancelada']]
-    quote=models.OneToOneField(Quote,on_delete=models.PROTECT)
+    quote=models.OneToOneField(Quote, verbose_name='cotización',on_delete=models.PROTECT)
     status=models.CharField('estado',max_length=50,choices=STATES,default='Registrada')
-    inventory=models.ForeignKey(Inventory,on_delete=models.PROTECT,null=True,blank=True)
+    inventory=models.ForeignKey(Inventory, verbose_name='registro de inventario',on_delete=models.PROTECT,null=True,blank=True)
     class Meta:
+        verbose_name = 'orden de trabajo'
+        verbose_name_plural = 'órdenes de trabajo'
         indexes=[models.Index(fields=['status','created_at'],name='order_status_date')]
         constraints=[models.CheckConstraint(condition=models.Q(status__in=['Registrada','En fabricación','Control de calidad','Disponible para retiro','Entregada','Cancelada']),name='order_valid_state')]
 class Warranty(models.Model):
@@ -194,12 +226,14 @@ class Warranty(models.Model):
     description=models.TextField('descripción de la falla')
     status=models.CharField('estado',max_length=50,choices=STATES,default='En revisión taller')
     justification=models.TextField('justificación del rechazo',blank=True)
-    actor=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True)
-    created_at=models.DateTimeField(auto_now_add=True)
-    token=models.UUIDField(default=uuid.uuid4,unique=True,editable=False)
-    updated_at=models.DateTimeField(auto_now=True)
-    damaged_frame_destination=models.CharField(max_length=200,blank=True)
+    actor=models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name='usuario responsable',on_delete=models.SET_NULL,null=True)
+    created_at=models.DateTimeField('fecha de creación', auto_now_add=True)
+    token=models.UUIDField('referencia de acceso', default=uuid.uuid4,unique=True,editable=False)
+    updated_at=models.DateTimeField('última actualización', auto_now=True)
+    damaged_frame_destination=models.CharField('destino del armazón dañado', max_length=200,blank=True)
     class Meta:
+        verbose_name = 'garantía'
+        verbose_name_plural = 'garantías'
         indexes=[models.Index(fields=['status','created_at'],name='warranty_status_date')]
     @property
     def client(self): return self.order.client
@@ -207,15 +241,19 @@ class Warranty(models.Model):
     def folio(self): return f'GAR-{self.pk:06d}-{self.token.hex[:12].upper()}'
     def __str__(self): return self.folio
 class Receipt(models.Model):
-    order=models.OneToOneField(Order,on_delete=models.PROTECT)
-    method=models.CharField(max_length=30)
-    signature=models.FileField(upload_to='firmas/',storage=private_storage,blank=True)
-    pdf=models.FileField(upload_to='comprobantes/',storage=private_storage,blank=True)
-    sha256=models.CharField(max_length=64,blank=True)
-    observations=models.TextField(blank=True)
-    terms=models.TextField()
-    created_at=models.DateTimeField(auto_now_add=True)
-    actor=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True)
+    order=models.OneToOneField(Order, verbose_name='orden de trabajo',on_delete=models.PROTECT)
+    method=models.CharField('método', max_length=30)
+    signature=models.FileField('firma', upload_to='firmas/',storage=private_storage,blank=True)
+    pdf=models.FileField('documento PDF', upload_to='comprobantes/',storage=private_storage,blank=True)
+    sha256=models.CharField('hash SHA-256', max_length=64,blank=True)
+    observations=models.TextField('observaciones', blank=True)
+    terms=models.TextField('condiciones')
+    created_at=models.DateTimeField('fecha de creación', auto_now_add=True)
+    actor=models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name='usuario responsable',on_delete=models.SET_NULL,null=True)
+
+    class Meta:
+        verbose_name = 'comprobante de recepción'
+        verbose_name_plural = 'comprobantes de recepción'
     def __str__(self): return f'Recepción · {self.order.folio}'
 def default_agenda_hours():
     """Horario académico inicial. Cada día usa el índice de date.weekday()."""
@@ -244,26 +282,34 @@ def validate_agenda_hours(value):
 
 class SiteConfiguration(models.Model):
     warranty_terms=models.TextField('condiciones de garantía',default='DEMO ACADÉMICO: Las condiciones comerciales, plazos y exclusiones de garantía deben ser confirmados por Ópticas Amaru. Este comprobante registra la recepción del producto. Las solicitudes de garantía se ingresan para evaluación del taller. No se establece una cobertura comercial definitiva en este prototipo.')
-    agenda_hours = models.JSONField(default=default_agenda_hours, validators=[validate_agenda_hours])
+    agenda_hours = models.JSONField('horarios de atención', default=default_agenda_hours, validators=[validate_agenda_hours])
+
+    class Meta:
+        verbose_name = 'configuración del sitio'
+        verbose_name_plural = 'configuración del sitio'
 
 
 class AgendaBlock(models.Model):
-    day = models.DateField()
-    slot = models.CharField(max_length=5, blank=True, default="")
-    active = models.BooleanField(default=True)
+    day = models.DateField('fecha')
+    slot = models.CharField('hora', max_length=5, blank=True, default="")
+    active = models.BooleanField('activo', default=True)
 
     class Meta:
+        verbose_name = 'bloqueo de agenda'
+        verbose_name_plural = 'bloqueos de agenda'
         ordering = ["day", "slot"]
         constraints = [models.UniqueConstraint(fields=["day", "slot"], name="agenda_block_unique")]
 
 
 class Audit(models.Model):
-    actor=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True)
-    action=models.CharField(max_length=200)
-    model=models.CharField(max_length=80)
-    record_id=models.PositiveBigIntegerField()
-    at=models.DateTimeField(auto_now_add=True)
+    actor=models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name='usuario responsable',on_delete=models.SET_NULL,null=True)
+    action=models.CharField('acción', max_length=200)
+    model=models.CharField('modelo', max_length=80)
+    record_id=models.PositiveBigIntegerField('identificador del registro')
+    at=models.DateTimeField('fecha y hora', auto_now_add=True)
     class Meta:
+        verbose_name = 'registro de auditoría'
+        verbose_name_plural = 'auditoría'
         ordering=['-at']
         indexes=[models.Index(fields=['model','record_id','at'],name='audit_record_date')]
     def __str__(self): return f'{self.at} · {self.actor or "Formulario remoto"} · {self.action} · {self.model} #{self.record_id}'
@@ -279,38 +325,44 @@ def mining_image_path(instance, filename):
 
 class Product(models.Model):
     """Catálogo público. Las características clínicas siguen en cada cotización/OT."""
-    sku=models.CharField(max_length=60,unique=True)
-    brand=models.ForeignKey('Brand',on_delete=models.PROTECT,null=True,blank=True)
-    model=models.ForeignKey('ProductModel',on_delete=models.PROTECT,null=True,blank=True)
-    stock_category=models.ForeignKey('StockCategory',on_delete=models.PROTECT,null=True,blank=True)
-    material=models.CharField(max_length=120,blank=True)
-    name=models.CharField(max_length=180)
-    category=models.CharField(max_length=20,choices=Inventory.CATEGORY)
-    description=models.TextField(blank=True)
-    crystal=models.CharField(max_length=100,blank=True)
-    treatments=models.CharField(max_length=200,blank=True)
-    color=models.CharField(max_length=80,blank=True)
-    lens_type = models.CharField(max_length=80, blank=True)
-    variants = models.JSONField(default=list, blank=True)
-    reference_price = models.PositiveIntegerField(null=True, blank=True)
+    sku=models.CharField('SKU', max_length=60,unique=True)
+    brand=models.ForeignKey('Brand', verbose_name='marca',on_delete=models.PROTECT,null=True,blank=True)
+    model=models.ForeignKey('ProductModel', verbose_name='modelo',on_delete=models.PROTECT,null=True,blank=True)
+    stock_category=models.ForeignKey('StockCategory', verbose_name='categoría de inventario',on_delete=models.PROTECT,null=True,blank=True)
+    material=models.CharField('material', max_length=120,blank=True)
+    name=models.CharField('nombre', max_length=180)
+    category=models.CharField('categoría', max_length=20,choices=Inventory.CATEGORY)
+    description=models.TextField('descripción', blank=True)
+    crystal=models.CharField('cristal', max_length=100,blank=True)
+    treatments=models.CharField('tratamientos', max_length=200,blank=True)
+    color=models.CharField('color', max_length=80,blank=True)
+    lens_type = models.CharField('tipo de lente', max_length=80, blank=True)
+    variants = models.JSONField('variantes', default=list, blank=True)
+    reference_price = models.PositiveIntegerField('precio de referencia', null=True, blank=True)
     direct_checkout = models.BooleanField('Precio habilitado para checkout académico', default=False)
-    requires_prescription = models.BooleanField(default=False)
-    mining_only = models.BooleanField(default=False)
-    mining_image = models.ImageField(upload_to=mining_image_path, storage=private_storage, blank=True)
-    image=models.ImageField(upload_to=public_image_path,storage=public_storage,blank=True,validators=[validate_document])
-    active=models.BooleanField(default=True)
-    created_at=models.DateTimeField(auto_now_add=True)
-    updated_at=models.DateTimeField(auto_now=True)
+    requires_prescription = models.BooleanField('requiere receta', default=False)
+    mining_only = models.BooleanField('exclusivo del catálogo minero', default=False)
+    mining_image = models.ImageField('imagen del catálogo minero', upload_to=mining_image_path, storage=private_storage, blank=True)
+    image=models.ImageField('imagen', upload_to=public_image_path,storage=public_storage,blank=True,validators=[validate_document])
+    active=models.BooleanField('activo', default=True)
+    created_at=models.DateTimeField('fecha de creación', auto_now_add=True)
+    updated_at=models.DateTimeField('última actualización', auto_now=True)
+
+    class Meta:
+        verbose_name = 'producto'
+        verbose_name_plural = 'productos'
 
 
 class QuoteLine(models.Model):
-    quote=models.ForeignKey(Quote,on_delete=models.PROTECT,related_name='lines')
-    product=models.ForeignKey(Product,on_delete=models.PROTECT)
-    quantity=models.PositiveIntegerField(default=1)
-    unit_price=models.DecimalField(max_digits=12,decimal_places=0)
-    variant = models.CharField(max_length=80, blank=True)
-    product_name = models.CharField(max_length=180, blank=True)
+    quote=models.ForeignKey(Quote, verbose_name='cotización',on_delete=models.PROTECT,related_name='lines')
+    product=models.ForeignKey(Product, verbose_name='producto',on_delete=models.PROTECT)
+    quantity=models.PositiveIntegerField('cantidad', default=1)
+    unit_price=models.DecimalField('precio unitario', max_digits=12,decimal_places=0)
+    variant = models.CharField('variante', max_length=80, blank=True)
+    product_name = models.CharField('nombre del producto', max_length=180, blank=True)
     class Meta:
+        verbose_name = 'línea de cotización'
+        verbose_name_plural = 'líneas de cotización'
         constraints=[models.UniqueConstraint(fields=['quote','product','variant'],name='quote_product_variant_once'),
             models.CheckConstraint(condition=models.Q(quantity__gt=0),name='line_positive_quantity'),
             models.CheckConstraint(condition=models.Q(unit_price__gte=0),name='line_nonnegative_price')]
@@ -319,56 +371,60 @@ class QuoteLine(models.Model):
 class Inquiry(models.Model):
     TYPES=[('agenda','Solicitud de atención'),('contacto','Contacto'),('lentes','Orientación de lentes'),('registro','Registro de cliente'),('compra','Solicitud de compra')]
     STATES=[(s,s) for s in ['Nueva','En revisión','Contactada','Cerrada','Cancelada']]
-    token=models.UUIDField(default=uuid.uuid4,unique=True,editable=False)
-    idempotency_key=models.UUIDField(unique=True)
-    source=models.CharField(max_length=10,choices=[('web','Sitio web'),('qr','Código QR')],default='web')
-    origin = models.CharField(max_length=20, choices=ENTRY_ORIGINS, default='web')
-    privacy_version = models.CharField(max_length=24, blank=True)
-    privacy_accepted_at = models.DateTimeField(null=True, blank=True)
-    union_membership = models.OneToOneField('UnionMembership', on_delete=models.PROTECT, null=True, blank=True, related_name='registration_inquiry')
-    registration_rut=models.CharField(max_length=12,blank=True)
-    client=models.ForeignKey(Client,on_delete=models.PROTECT,null=True,blank=True,related_name='inquiries')
-    product = models.ForeignKey(Product, on_delete=models.PROTECT, null=True, blank=True)
-    prescription = models.ForeignKey(Prescription, on_delete=models.PROTECT, null=True, blank=True)
-    agreement = models.ForeignKey(Agreement, on_delete=models.PROTECT, null=True, blank=True)
-    agreement_role = models.CharField(max_length=10, choices=[("titular", "Titular"), ("carga", "Carga familiar")], blank=True)
-    verification_state = models.CharField(max_length=12, choices=[
+    token=models.UUIDField('referencia de acceso', default=uuid.uuid4,unique=True,editable=False)
+    idempotency_key=models.UUIDField('referencia de envío', unique=True)
+    source=models.CharField('canal de origen', max_length=10,choices=[('web','Sitio web'),('qr','Código QR')],default='web')
+    origin = models.CharField('origen', max_length=20, choices=ENTRY_ORIGINS, default='web')
+    privacy_version = models.CharField('versión de la política de privacidad', max_length=24, blank=True)
+    privacy_accepted_at = models.DateTimeField('fecha de aceptación de privacidad', null=True, blank=True)
+    union_membership = models.OneToOneField('UnionMembership', verbose_name='afiliación sindical', on_delete=models.PROTECT, null=True, blank=True, related_name='registration_inquiry')
+    registration_rut=models.CharField('RUT de registro', max_length=12,blank=True)
+    client=models.ForeignKey(Client, verbose_name='cliente',on_delete=models.PROTECT,null=True,blank=True,related_name='inquiries')
+    product = models.ForeignKey(Product, verbose_name='producto', on_delete=models.PROTECT, null=True, blank=True)
+    prescription = models.ForeignKey(Prescription, verbose_name='receta', on_delete=models.PROTECT, null=True, blank=True)
+    agreement = models.ForeignKey(Agreement, verbose_name='convenio', on_delete=models.PROTECT, null=True, blank=True)
+    agreement_role = models.CharField('calidad de afiliación', max_length=10, choices=[("titular", "Titular"), ("carga", "Carga familiar")], blank=True)
+    verification_state = models.CharField('estado de verificación', max_length=12, choices=[
         ('pendiente', 'Pendiente'), ('aprobada', 'Aprobada'), ('rechazada', 'Rechazada'), ('inactiva', 'Inactiva')],
         blank=True)
-    verification_method = models.CharField(max_length=12, blank=True)
-    verification_note = models.CharField(max_length=500, blank=True)
-    verified_at = models.DateTimeField(null=True, blank=True)
-    purchase_mode = models.CharField(max_length=12, choices=[('compra', 'Compra'), ('cotizacion', 'Cotización')], blank=True)
-    purchase_quote = models.OneToOneField(Quote, on_delete=models.PROTECT, null=True, blank=True, related_name='purchase_inquiry')
-    verified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="verified_agreements")
-    kind=models.CharField(max_length=20,choices=TYPES)
-    name=models.CharField(max_length=180)
-    phone=models.CharField(max_length=30)
-    email=models.EmailField()
-    service=models.CharField(max_length=120)
-    reason=models.TextField(max_length=2000)
-    contact_authorized=models.BooleanField(default=False)
-    day=models.DateField(null=True,blank=True)
-    slot=models.TimeField(null=True,blank=True)
-    status=models.CharField(max_length=20,choices=STATES,default='Nueva')
-    actor=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,blank=True)
-    created_at=models.DateTimeField(auto_now_add=True)
-    updated_at=models.DateTimeField(auto_now=True)
+    verification_method = models.CharField('método de verificación', max_length=12, blank=True)
+    verification_note = models.CharField('nota de verificación', max_length=500, blank=True)
+    verified_at = models.DateTimeField('fecha de verificación', null=True, blank=True)
+    purchase_mode = models.CharField('tipo de solicitud de compra', max_length=12, choices=[('compra', 'Compra'), ('cotizacion', 'Cotización')], blank=True)
+    purchase_quote = models.OneToOneField(Quote, verbose_name='cotización de la compra', on_delete=models.PROTECT, null=True, blank=True, related_name='purchase_inquiry')
+    verified_by = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name='verificado por', on_delete=models.SET_NULL, null=True, blank=True, related_name="verified_agreements")
+    kind=models.CharField('tipo', max_length=20,choices=TYPES)
+    name=models.CharField('nombre', max_length=180)
+    phone=models.CharField('teléfono', max_length=30)
+    email=models.EmailField('correo electrónico')
+    service=models.CharField('servicio', max_length=120)
+    reason=models.TextField('motivo', max_length=2000)
+    contact_authorized=models.BooleanField('contacto autorizado', default=False)
+    day=models.DateField('fecha', null=True,blank=True)
+    slot=models.TimeField('hora', null=True,blank=True)
+    status=models.CharField('estado', max_length=20,choices=STATES,default='Nueva')
+    actor=models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name='usuario responsable',on_delete=models.SET_NULL,null=True,blank=True)
+    created_at=models.DateTimeField('fecha de creación', auto_now_add=True)
+    updated_at=models.DateTimeField('última actualización', auto_now=True)
     class Meta:
+        verbose_name = 'solicitud recibida'
+        verbose_name_plural = 'solicitudes recibidas'
         indexes=[models.Index(fields=['status','created_at'],name='inquiry_status_date'),
                  models.Index(fields=['agreement','origin','kind','created_at'],name='inquiry_org_origin')]
 
 
 class PurchaseLine(models.Model):
-    inquiry = models.ForeignKey(Inquiry, on_delete=models.PROTECT, related_name='purchase_lines')
-    product = models.ForeignKey(Product, on_delete=models.PROTECT)
-    product_name = models.CharField(max_length=180)
-    variant = models.CharField(max_length=80, blank=True)
-    quantity = models.PositiveSmallIntegerField()
-    unit_price = models.PositiveIntegerField(null=True)
-    characteristics = models.JSONField(default=dict)
+    inquiry = models.ForeignKey(Inquiry, verbose_name='solicitud recibida', on_delete=models.PROTECT, related_name='purchase_lines')
+    product = models.ForeignKey(Product, verbose_name='producto', on_delete=models.PROTECT)
+    product_name = models.CharField('nombre del producto', max_length=180)
+    variant = models.CharField('variante', max_length=80, blank=True)
+    quantity = models.PositiveSmallIntegerField('cantidad')
+    unit_price = models.PositiveIntegerField('precio unitario', null=True)
+    characteristics = models.JSONField('características', default=dict)
 
     class Meta:
+        verbose_name = 'línea de compra'
+        verbose_name_plural = 'líneas de compra'
         ordering = ['product_id', 'variant']
         constraints = [
             models.UniqueConstraint(fields=['inquiry', 'product', 'variant'], name='purchase_product_variant_once'),
@@ -378,22 +434,28 @@ class PurchaseLine(models.Model):
 
 class AppointmentReservation(models.Model):
     """Una plaza de demostración por horario; UNIQUE funciona también en MariaDB."""
-    inquiry=models.OneToOneField(Inquiry,on_delete=models.PROTECT)
-    day=models.DateField()
-    slot=models.TimeField()
+    inquiry=models.OneToOneField(Inquiry, verbose_name='solicitud recibida',on_delete=models.PROTECT)
+    day=models.DateField('fecha')
+    slot=models.TimeField('hora')
     class Meta:
+        verbose_name = 'reserva de hora'
+        verbose_name_plural = 'reservas de horas'
         constraints=[models.UniqueConstraint(fields=['day','slot'],name='appointment_slot_unique')]
 
 
 class DeliveryAttempt(models.Model):
     """Diario persistente de compensación para archivos fuera de la transacción SQL."""
-    key=models.UUIDField(primary_key=True,default=uuid.uuid4,editable=False)
-    order=models.ForeignKey(Order,on_delete=models.PROTECT)
-    state=models.CharField(max_length=20,default='pending')
-    pdf_key=models.CharField(max_length=250)
-    signature_key=models.CharField(max_length=250,blank=True)
-    created_at=models.DateTimeField(auto_now_add=True)
-    updated_at=models.DateTimeField(auto_now=True)
+    key=models.UUIDField('clave de almacenamiento', primary_key=True,default=uuid.uuid4,editable=False)
+    order=models.ForeignKey(Order, verbose_name='orden de trabajo',on_delete=models.PROTECT)
+    state=models.CharField('estado', max_length=20,default='pending')
+    pdf_key=models.CharField('referencia del PDF', max_length=250)
+    signature_key=models.CharField('referencia de la firma', max_length=250,blank=True)
+    created_at=models.DateTimeField('fecha de creación', auto_now_add=True)
+    updated_at=models.DateTimeField('última actualización', auto_now=True)
+
+    class Meta:
+        verbose_name = 'intento de entrega'
+        verbose_name_plural = 'intentos de entrega'
 
 
 class Union(models.Model):
@@ -402,13 +464,17 @@ class Union(models.Model):
         ACTIVE = 'active', 'Activo'
         SUSPENDED = 'suspended', 'Suspendido'
 
-    agreement = models.OneToOneField(Agreement, on_delete=models.PROTECT, related_name='union')
-    identifier = models.SlugField(max_length=40, unique=True)
-    institutional_details = models.TextField(blank=True, max_length=1000)
-    state = models.CharField(max_length=12, choices=State, default=State.PENDING)
-    activated_at = models.DateTimeField(null=True, blank=True)
-    activated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True)
-    review_note = models.CharField(max_length=240, blank=True)
+    agreement = models.OneToOneField(Agreement, verbose_name='convenio', on_delete=models.PROTECT, related_name='union')
+    identifier = models.SlugField('identificador', max_length=40, unique=True)
+    institutional_details = models.TextField('datos institucionales', blank=True, max_length=1000)
+    state = models.CharField('estado', max_length=12, choices=State, default=State.PENDING)
+    activated_at = models.DateTimeField('fecha de activación', null=True, blank=True)
+    activated_by = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name='activado por', on_delete=models.PROTECT, null=True)
+    review_note = models.CharField('nota de revisión', max_length=240, blank=True)
+
+    class Meta:
+        verbose_name = 'sindicato'
+        verbose_name_plural = 'sindicatos'
 
     def __str__(self):
         return self.agreement.name
@@ -419,19 +485,21 @@ def union_document_path(instance, filename):
 
 
 class UnionDocument(models.Model):
-    union = models.ForeignKey(Union, on_delete=models.PROTECT, related_name='documents')
-    version = models.PositiveIntegerField()
-    file = models.FileField(upload_to=union_document_path, storage=private_storage)
-    sha256 = models.CharField(max_length=64)
-    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
-    uploaded_at = models.DateTimeField(auto_now_add=True)
-    signed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name='+')
-    signed_at = models.DateTimeField(null=True, blank=True)
-    signer_name = models.CharField(max_length=180, blank=True)
-    organization_name = models.CharField(max_length=180, blank=True)
-    acceptance = models.CharField(max_length=240, blank=True)
+    union = models.ForeignKey(Union, verbose_name='sindicato', on_delete=models.PROTECT, related_name='documents')
+    version = models.PositiveIntegerField('versión')
+    file = models.FileField('archivo', upload_to=union_document_path, storage=private_storage)
+    sha256 = models.CharField('hash SHA-256', max_length=64)
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name='cargado por', on_delete=models.PROTECT, related_name='+')
+    uploaded_at = models.DateTimeField('fecha de carga', auto_now_add=True)
+    signed_by = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name='firmado por', on_delete=models.PROTECT, null=True, related_name='+')
+    signed_at = models.DateTimeField('fecha de firma', null=True, blank=True)
+    signer_name = models.CharField('nombre de quien firma', max_length=180, blank=True)
+    organization_name = models.CharField('nombre de la organización', max_length=180, blank=True)
+    acceptance = models.CharField('aceptación', max_length=240, blank=True)
 
     class Meta:
+        verbose_name = 'documento de convenio sindical'
+        verbose_name_plural = 'documentos de convenios sindicales'
         constraints = [models.UniqueConstraint(fields=['union', 'version'], name='unique_union_document_version')]
 
 
@@ -441,23 +509,25 @@ class UnionMembership(models.Model):
         ACTIVE = 'active', 'Activa'
         INACTIVE = 'inactive', 'Inactiva'
 
-    union = models.ForeignKey(Union, on_delete=models.PROTECT, related_name='memberships')
-    client = models.ForeignKey(Client, on_delete=models.PROTECT, null=True, related_name='union_memberships')
-    rut = models.CharField(max_length=12)
-    name = models.CharField(max_length=180)
-    email = models.EmailField(max_length=150)
-    phone = models.CharField(max_length=30)
-    role = models.CharField(max_length=10, choices=[('titular', 'Titular'), ('carga', 'Carga familiar')])
-    state = models.CharField(max_length=10, choices=State, default=State.PENDING)
-    origin = models.CharField(max_length=20, choices=ENTRY_ORIGINS, default='administrative')
-    created_at = models.DateTimeField(auto_now_add=True)
-    changed_at = models.DateTimeField(auto_now=True)
-    verified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name='+')
-    verification_note = models.CharField(max_length=240, blank=True)
-    accepted_at = models.DateTimeField(null=True)
-    recovery_requested_at = models.DateTimeField(null=True)
+    union = models.ForeignKey(Union, verbose_name='sindicato', on_delete=models.PROTECT, related_name='memberships')
+    client = models.ForeignKey(Client, verbose_name='cliente', on_delete=models.PROTECT, null=True, related_name='union_memberships')
+    rut = models.CharField('RUT', max_length=12)
+    name = models.CharField('nombre', max_length=180)
+    email = models.EmailField('correo electrónico', max_length=150)
+    phone = models.CharField('teléfono', max_length=30)
+    role = models.CharField('calidad', max_length=10, choices=[('titular', 'Titular'), ('carga', 'Carga familiar')])
+    state = models.CharField('estado', max_length=10, choices=State, default=State.PENDING)
+    origin = models.CharField('origen', max_length=20, choices=ENTRY_ORIGINS, default='administrative')
+    created_at = models.DateTimeField('fecha de creación', auto_now_add=True)
+    changed_at = models.DateTimeField('última modificación', auto_now=True)
+    verified_by = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name='verificado por', on_delete=models.PROTECT, null=True, related_name='+')
+    verification_note = models.CharField('nota de verificación', max_length=240, blank=True)
+    accepted_at = models.DateTimeField('fecha de aceptación', null=True)
+    recovery_requested_at = models.DateTimeField('fecha de solicitud de recuperación', null=True)
 
     class Meta:
+        verbose_name = 'trabajador asociado a sindicato'
+        verbose_name_plural = 'trabajadores asociados a sindicatos'
         constraints = [
             models.UniqueConstraint(fields=['union', 'rut'], name='union_membership_unique_rut'),
             models.UniqueConstraint(fields=['union', 'email'], name='union_membership_unique_email'),
@@ -471,18 +541,20 @@ class AccessInvitation(models.Model):
         WORKER = 'worker', 'Trabajador'
         RECOVERY = 'recovery', 'Recuperación'
 
-    purpose = models.CharField(max_length=16, choices=Purpose)
-    union = models.ForeignKey(Union, on_delete=models.PROTECT, related_name='invitations')
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name='+')
-    membership = models.ForeignKey(UnionMembership, on_delete=models.PROTECT, null=True, related_name='invitations')
-    digest = models.CharField(max_length=64, unique=True)
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
-    created_at = models.DateTimeField(auto_now_add=True)
-    expires_at = models.DateTimeField()
-    used_at = models.DateTimeField(null=True)
-    revoked_at = models.DateTimeField(null=True)
+    purpose = models.CharField('finalidad', max_length=16, choices=Purpose)
+    union = models.ForeignKey(Union, verbose_name='sindicato', on_delete=models.PROTECT, related_name='invitations')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name='cuenta de usuario', on_delete=models.PROTECT, null=True, related_name='+')
+    membership = models.ForeignKey(UnionMembership, verbose_name='afiliación', on_delete=models.PROTECT, null=True, related_name='invitations')
+    digest = models.CharField('huella de integridad', max_length=64, unique=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name='creado por', on_delete=models.PROTECT, related_name='+')
+    created_at = models.DateTimeField('fecha de creación', auto_now_add=True)
+    expires_at = models.DateTimeField('vence el')
+    used_at = models.DateTimeField('fecha de uso', null=True)
+    revoked_at = models.DateTimeField('fecha de revocación', null=True)
 
     class Meta:
+        verbose_name = 'invitación de acceso'
+        verbose_name_plural = 'invitaciones de acceso'
         indexes = [models.Index(fields=['union', 'purpose'], name='union_invite_purpose')]
         constraints = [models.CheckConstraint(
             condition=(models.Q(purpose='representative', user__isnull=False, membership__isnull=True)
@@ -493,30 +565,40 @@ class AccessInvitation(models.Model):
 
 
 class PickupCode(models.Model):
-    order = models.OneToOneField(Order, on_delete=models.PROTECT, related_name='pickup_code')
-    nonce = models.UUIDField(default=uuid.uuid4, editable=False)
-    digest = models.CharField(max_length=64, unique=True)
-    generated_at = models.DateTimeField(default=timezone.now)
-    expires_at = models.DateTimeField()
-    used_at = models.DateTimeField(null=True)
-    used_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name='+')
-    revoked_at = models.DateTimeField(null=True)
+    order = models.OneToOneField(Order, verbose_name='orden de trabajo', on_delete=models.PROTECT, related_name='pickup_code')
+    nonce = models.UUIDField('valor de seguridad', default=uuid.uuid4, editable=False)
+    digest = models.CharField('huella de integridad', max_length=64, unique=True)
+    generated_at = models.DateTimeField('fecha de emisión', default=timezone.now)
+    expires_at = models.DateTimeField('vence el')
+    used_at = models.DateTimeField('fecha de uso', null=True)
+    used_by = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name='utilizado por', on_delete=models.PROTECT, null=True, related_name='+')
+    revoked_at = models.DateTimeField('fecha de revocación', null=True)
+
+    class Meta:
+        verbose_name = 'código de retiro'
+        verbose_name_plural = 'códigos de retiro'
 
 
 class Brand(models.Model):
-    name = models.CharField(max_length=120, unique=True)
-    active = models.BooleanField(default=True)
+    name = models.CharField('nombre', max_length=120, unique=True)
+    active = models.BooleanField('activo', default=True)
+
+    class Meta:
+        verbose_name = 'marca'
+        verbose_name_plural = 'marcas'
 
     def __str__(self):
         return self.name
 
 
 class ProductModel(models.Model):
-    brand = models.ForeignKey(Brand, on_delete=models.PROTECT)
-    name = models.CharField(max_length=120)
-    active = models.BooleanField(default=True)
+    brand = models.ForeignKey(Brand, verbose_name='marca', on_delete=models.PROTECT)
+    name = models.CharField('nombre', max_length=120)
+    active = models.BooleanField('activo', default=True)
 
     class Meta:
+        verbose_name = 'modelo de producto'
+        verbose_name_plural = 'modelos de productos'
         constraints = [models.UniqueConstraint(fields=['brand', 'name'], name='brand_model_unique')]
 
     def __str__(self):
@@ -524,40 +606,50 @@ class ProductModel(models.Model):
 
 
 class StockCategory(models.Model):
-    name = models.CharField(max_length=120, unique=True)
-    active = models.BooleanField(default=True)
+    name = models.CharField('nombre', max_length=120, unique=True)
+    active = models.BooleanField('activo', default=True)
+
+    class Meta:
+        verbose_name = 'categoría de inventario'
+        verbose_name_plural = 'categorías de inventario'
 
     def __str__(self):
         return self.name
 
 
 class Supplier(models.Model):
-    name = models.CharField(max_length=180, unique=True)
-    rut = models.CharField(max_length=12, blank=True, validators=[validate_rut])
-    phone = models.CharField(max_length=30, blank=True)
-    email = models.EmailField(blank=True)
-    address = models.CharField(max_length=240, blank=True)
-    contact = models.CharField(max_length=180, blank=True)
-    notes = models.TextField(max_length=2000, blank=True)
-    active = models.BooleanField(default=True)
+    name = models.CharField('nombre', max_length=180, unique=True)
+    rut = models.CharField('RUT', max_length=12, blank=True, validators=[validate_rut])
+    phone = models.CharField('teléfono', max_length=30, blank=True)
+    email = models.EmailField('correo electrónico', blank=True)
+    address = models.CharField('dirección', max_length=240, blank=True)
+    contact = models.CharField('contacto', max_length=180, blank=True)
+    notes = models.TextField('notas', max_length=2000, blank=True)
+    active = models.BooleanField('activo', default=True)
+
+    class Meta:
+        verbose_name = 'proveedor'
+        verbose_name_plural = 'proveedores'
 
     def __str__(self):
         return self.name
 
 
 class ProductVariant(models.Model):
-    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='stock_variants')
-    label = models.CharField(max_length=80, blank=True)
-    sku = models.CharField(max_length=60, unique=True)
-    barcode = models.CharField(max_length=80, unique=True, null=True, blank=True)
-    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, null=True, blank=True)
-    color = models.CharField(max_length=80, blank=True)
-    size = models.CharField(max_length=60, blank=True)
-    active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    product = models.ForeignKey(Product, verbose_name='producto', on_delete=models.PROTECT, related_name='stock_variants')
+    label = models.CharField('nombre de la variante', max_length=80, blank=True)
+    sku = models.CharField('SKU', max_length=60, unique=True)
+    barcode = models.CharField('código de barras', max_length=80, unique=True, null=True, blank=True)
+    supplier = models.ForeignKey(Supplier, verbose_name='proveedor', on_delete=models.PROTECT, null=True, blank=True)
+    color = models.CharField('color', max_length=80, blank=True)
+    size = models.CharField('tamaño', max_length=60, blank=True)
+    active = models.BooleanField('activo', default=True)
+    created_at = models.DateTimeField('fecha de creación', auto_now_add=True)
+    updated_at = models.DateTimeField('última actualización', auto_now=True)
 
     class Meta:
+        verbose_name = 'variante de producto'
+        verbose_name_plural = 'variantes de productos'
         constraints = [models.UniqueConstraint(fields=['product', 'label'], name='product_variant_label_unique')]
 
     def __str__(self):
@@ -569,21 +661,23 @@ class AgreementBenefit(models.Model):
              ('price', 'Precio preferencial unitario'), ('catalog', 'Catálogo exclusivo'),
              ('mining', 'Lentes mineros'), ('family', 'Cargas familiares'),
              ('evaluation', 'Evaluación visual'), ('contribution', 'Aporte de organización'), ('other', 'Otro')]
-    agreement = models.ForeignKey(Agreement, on_delete=models.PROTECT, related_name='benefits')
-    name = models.CharField(max_length=160)
-    description = models.TextField(max_length=2000, blank=True)
-    kind = models.CharField(max_length=16, choices=TYPES)
-    value = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    agreement = models.ForeignKey(Agreement, verbose_name='convenio', on_delete=models.PROTECT, related_name='benefits')
+    name = models.CharField('nombre', max_length=160)
+    description = models.TextField('descripción', max_length=2000, blank=True)
+    kind = models.CharField('tipo', max_length=16, choices=TYPES)
+    value = models.DecimalField('valor', max_digits=12, decimal_places=2, null=True, blank=True)
     products = models.ManyToManyField(Product, blank=True)
-    category = models.ForeignKey(StockCategory, on_delete=models.PROTECT, null=True, blank=True)
-    starts_on = models.DateField(null=True, blank=True)
-    ends_on = models.DateField(null=True, blank=True)
-    role = models.CharField(max_length=10, choices=[('all', 'Titular y cargas'), ('titular', 'Titular'), ('carga', 'Carga familiar')], default='all')
-    conditions = models.TextField(max_length=2000, blank=True)
-    active = models.BooleanField(default=False)
+    category = models.ForeignKey(StockCategory, verbose_name='categoría', on_delete=models.PROTECT, null=True, blank=True)
+    starts_on = models.DateField('inicio de vigencia', null=True, blank=True)
+    ends_on = models.DateField('fin de vigencia', null=True, blank=True)
+    role = models.CharField('calidad', max_length=10, choices=[('all', 'Titular y cargas'), ('titular', 'Titular'), ('carga', 'Carga familiar')], default='all')
+    conditions = models.TextField('condiciones', max_length=2000, blank=True)
+    active = models.BooleanField('activo', default=False)
     public_visible = models.BooleanField('Autorizado para publicación en QR de consultas', default=False)
 
     class Meta:
+        verbose_name = 'beneficio de convenio'
+        verbose_name_plural = 'beneficios de convenios'
         indexes = [models.Index(fields=['agreement', 'active'], name='benefit_agreement_active')]
         constraints = [models.CheckConstraint(condition=models.Q(value__isnull=True) | models.Q(value__gte=0), name='benefit_nonnegative'),
                        models.CheckConstraint(condition=~models.Q(kind='percent') | models.Q(value__lte=100), name='benefit_percent_limit')]
@@ -594,27 +688,33 @@ class AgreementBenefit(models.Model):
 
 class TransferConfiguration(models.Model):
     # La configuración comercial necesita una aprobación posterior de la empresa.
-    recipient = models.CharField(max_length=180, default='Ópticas Amaru · DEMOSTRACIÓN')
-    bank = models.CharField(max_length=120, default='Banco ficticio · SIN OPERACIÓN')
-    account_type = models.CharField(max_length=80, default='Cuenta de demostración')
-    account_number = models.CharField(max_length=80, default='DEMO-NO-OPERATIVA')
-    holder_rut = models.CharField(max_length=40, default='DEMO-SIN-RUT-BANCARIO')
-    email = models.EmailField(blank=True)
-    reserve_hours = models.PositiveSmallIntegerField(default=48)
+    recipient = models.CharField('titular de la cuenta', max_length=180, default='Ópticas Amaru · DEMOSTRACIÓN')
+    bank = models.CharField('banco', max_length=120, default='Banco ficticio · SIN OPERACIÓN')
+    account_type = models.CharField('tipo de cuenta', max_length=80, default='Cuenta de demostración')
+    account_number = models.CharField('número de cuenta', max_length=80, default='DEMO-NO-OPERATIVA')
+    holder_rut = models.CharField('RUT del titular', max_length=40, default='DEMO-SIN-RUT-BANCARIO')
+    email = models.EmailField('correo electrónico', blank=True)
+    reserve_hours = models.PositiveSmallIntegerField('horas de reserva', default=48)
+
+    class Meta:
+        verbose_name = 'configuración de transferencia'
+        verbose_name_plural = 'configuración de transferencias'
 
 
 class TransferPayment(models.Model):
     STATES = [('pending', 'Pendiente de pago'), ('submitted', 'Comprobante enviado'), ('review', 'En revisión'),
               ('approved', 'Pago aprobado'), ('rejected', 'Pago rechazado'), ('cancelled', 'Cancelado')]
-    quote = models.OneToOneField(Quote, on_delete=models.PROTECT, related_name='transfer_payment')
-    reference = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-    amount = models.DecimalField(max_digits=12, decimal_places=0)
-    bank_snapshot = models.JSONField(default=dict)
-    state = models.CharField(max_length=12, choices=STATES, default='pending')
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    quote = models.OneToOneField(Quote, verbose_name='cotización', on_delete=models.PROTECT, related_name='transfer_payment')
+    reference = models.UUIDField('referencia', default=uuid.uuid4, unique=True, editable=False)
+    amount = models.DecimalField('monto', max_digits=12, decimal_places=0)
+    bank_snapshot = models.JSONField('datos de transferencia registrados', default=dict)
+    state = models.CharField('estado', max_length=12, choices=STATES, default='pending')
+    created_at = models.DateTimeField('fecha de creación', auto_now_add=True)
+    updated_at = models.DateTimeField('última actualización', auto_now=True)
 
     class Meta:
+        verbose_name = 'pago por transferencia'
+        verbose_name_plural = 'pagos por transferencia'
         indexes = [models.Index(fields=['state', 'created_at'], name='payment_state_created')]
         constraints = [models.CheckConstraint(condition=models.Q(amount__gte=0), name='payment_nonnegative')]
 
@@ -624,51 +724,63 @@ def voucher_path(instance, filename):
 
 
 class PaymentVoucher(models.Model):
-    payment = models.ForeignKey(TransferPayment, on_delete=models.PROTECT, related_name='vouchers')
-    file = models.FileField(upload_to=voucher_path, storage=private_storage, validators=[validate_document])
-    declared_amount = models.DecimalField(max_digits=12, decimal_places=0)
-    sha256 = models.CharField(max_length=64)
-    submitted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
-    created_at = models.DateTimeField(auto_now_add=True)
+    payment = models.ForeignKey(TransferPayment, verbose_name='pago', on_delete=models.PROTECT, related_name='vouchers')
+    file = models.FileField('archivo', upload_to=voucher_path, storage=private_storage, validators=[validate_document])
+    declared_amount = models.DecimalField('monto declarado', max_digits=12, decimal_places=0)
+    sha256 = models.CharField('hash SHA-256', max_length=64)
+    submitted_by = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name='enviado por', on_delete=models.PROTECT, related_name='+')
+    created_at = models.DateTimeField('fecha de creación', auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'comprobante de pago'
+        verbose_name_plural = 'comprobantes de pago'
 
 
 class PaymentReview(models.Model):
-    payment = models.ForeignKey(TransferPayment, on_delete=models.PROTECT, related_name='reviews')
-    voucher = models.ForeignKey(PaymentVoucher, on_delete=models.PROTECT, null=True)
-    before = models.CharField(max_length=12)
-    after = models.CharField(max_length=12)
-    observations = models.TextField(max_length=1000)
-    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
-    created_at = models.DateTimeField(auto_now_add=True)
+    payment = models.ForeignKey(TransferPayment, verbose_name='pago', on_delete=models.PROTECT, related_name='reviews')
+    voucher = models.ForeignKey(PaymentVoucher, verbose_name='comprobante', on_delete=models.PROTECT, null=True)
+    before = models.CharField('valor anterior', max_length=12)
+    after = models.CharField('valor posterior', max_length=12)
+    observations = models.TextField('observaciones', max_length=1000)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name='usuario responsable', on_delete=models.PROTECT)
+    created_at = models.DateTimeField('fecha de creación', auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'revisión de pago'
+        verbose_name_plural = 'revisiones de pago'
 
 
 class StockMovement(models.Model):
-    inventory = models.ForeignKey(Inventory, on_delete=models.PROTECT, related_name='movements')
-    kind = models.CharField(max_length=12, choices=[('entry', 'Entrada'), ('exit', 'Salida'), ('adjustment', 'Ajuste')])
-    delta = models.IntegerField()
-    before = models.PositiveIntegerField()
-    after = models.PositiveIntegerField()
-    reason = models.CharField(max_length=240)
-    reference = models.CharField(max_length=180, blank=True)
-    operation = models.UUIDField(default=uuid.uuid4, unique=True)
-    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, null=True, blank=True)
-    unit_cost = models.DecimalField(max_digits=12, decimal_places=0, null=True, blank=True)
-    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
-    created_at = models.DateTimeField(auto_now_add=True)
+    inventory = models.ForeignKey(Inventory, verbose_name='registro de inventario', on_delete=models.PROTECT, related_name='movements')
+    kind = models.CharField('tipo', max_length=12, choices=[('entry', 'Entrada'), ('exit', 'Salida'), ('adjustment', 'Ajuste')])
+    delta = models.IntegerField('variación')
+    before = models.PositiveIntegerField('valor anterior')
+    after = models.PositiveIntegerField('valor posterior')
+    reason = models.CharField('motivo', max_length=240)
+    reference = models.CharField('referencia', max_length=180, blank=True)
+    operation = models.UUIDField('referencia de operación', default=uuid.uuid4, unique=True)
+    supplier = models.ForeignKey(Supplier, verbose_name='proveedor', on_delete=models.PROTECT, null=True, blank=True)
+    unit_cost = models.DecimalField('costo unitario', max_digits=12, decimal_places=0, null=True, blank=True)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name='usuario responsable', on_delete=models.PROTECT)
+    created_at = models.DateTimeField('fecha de creación', auto_now_add=True)
 
     class Meta:
+        verbose_name = 'movimiento de inventario'
+        verbose_name_plural = 'movimientos de inventario'
         indexes = [models.Index(fields=['inventory', 'created_at'], name='stock_movement_date')]
 
 
 class StockReservation(models.Model):
-    quote = models.ForeignKey(Quote, on_delete=models.PROTECT, related_name='stock_reservations')
-    inventory = models.ForeignKey(Inventory, on_delete=models.PROTECT, related_name='reservations')
-    quantity = models.PositiveIntegerField()
-    state = models.CharField(max_length=12, choices=[('active', 'Activa'), ('released', 'Liberada'), ('consumed', 'Consumida')], default='active')
-    expires_at = models.DateTimeField()
-    updated_at = models.DateTimeField(auto_now=True)
+    quote = models.ForeignKey(Quote, verbose_name='cotización', on_delete=models.PROTECT, related_name='stock_reservations')
+    inventory = models.ForeignKey(Inventory, verbose_name='registro de inventario', on_delete=models.PROTECT, related_name='reservations')
+    quantity = models.PositiveIntegerField('cantidad')
+    state = models.CharField('estado', max_length=12, choices=[('active', 'Activa'), ('released', 'Liberada'), ('consumed', 'Consumida')], default='active')
+    expires_at = models.DateTimeField('vence el')
+    updated_at = models.DateTimeField('última actualización', auto_now=True)
 
     class Meta:
+        verbose_name = 'reserva de stock'
+        verbose_name_plural = 'reservas de stock'
         constraints = [models.UniqueConstraint(fields=['quote', 'inventory'], name='quote_stock_reservation_unique'),
                        models.CheckConstraint(condition=models.Q(quantity__gt=0), name='stock_reservation_positive')]
         indexes = [models.Index(fields=['state', 'expires_at'], name='stock_reservation_expiry')]

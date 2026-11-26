@@ -12,7 +12,7 @@ from django.core import signing
 from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction, IntegrityError
-from django.db.models import Exists, OuterRef, Q
+from django.db.models import Exists, F, OuterRef, Q
 from django.http import HttpResponse, FileResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.middleware.csrf import get_token
@@ -27,6 +27,26 @@ from .serializers import *
 from .services import audit, record_consent, convert_quote, accept_receipt
 
 logger=logging.getLogger(__name__)
+
+OPEN_INQUIRY_STATES = ('Nueva', 'En revisión')
+
+
+@api_view(['GET'])
+def staff_summary(request):
+    from .commercial import PAYMENTS_FOR_REVIEW, stock_with_availability
+
+    checks = (
+        ('inquiries', 'view_inquiry', Inquiry.objects.filter(status__in=OPEN_INQUIRY_STATES)),
+        ('quotes', 'view_quote', Quote.objects.filter(approved=False, order__isnull=True)),
+        ('payments', 'view_transferpayment', TransferPayment.objects.filter(state__in=PAYMENTS_FOR_REVIEW)),
+        ('workers', 'change_union', UnionMembership.objects.filter(state=UnionMembership.State.PENDING).filter(
+            Q(accepted_at__isnull=False) | Q(origin='qr_worker'))),
+        ('ready', 'view_order', Order.objects.filter(status='Disponible para retiro')),
+        ('stock', 'view_inventory', stock_with_availability(Inventory.objects.filter(variant__active=True))
+         .filter(available_units__gt=0, available_units__lte=F('minimum'))),
+    )
+    return Response({key: rows.count() for key, permission, rows in checks
+                     if request.user.has_perm('gestion.' + permission)})
 
 
 class ModelAccess(permissions.BasePermission):
@@ -186,6 +206,8 @@ class Quotes(Records):
             return queryset
 
         filters = self.request.query_params
+        if filters.get('estado') == 'pendientes':
+            queryset = queryset.filter(approved=False, converted=False)
         rut = filters.get('rut', '').strip()
         if rut:
             compact = rut.replace('.', '').replace(' ', '')
@@ -354,7 +376,8 @@ class Inquiries(viewsets.GenericViewSet):
             if not re.fullmatch(r'[0-9]{1,18}', agreement):
                 raise ValidationError('Convenio no válido.')
             qs = qs.filter(agreement_id=agreement)
-        if state: qs=qs.filter(status=state)
+        if state == 'pendientes': qs=qs.filter(status__in=OPEN_INQUIRY_STATES)
+        elif state: qs=qs.filter(status=state)
         if day:
             from datetime import date
             try: parsed=date.fromisoformat(day)

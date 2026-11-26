@@ -244,6 +244,18 @@ class MovementInput(serializers.Serializer):
     unit_cost = serializers.DecimalField(max_digits=12, decimal_places=0, min_value=0, required=False, allow_null=True)
 
 
+PAYMENTS_FOR_REVIEW = ('submitted', 'review')
+
+
+def stock_with_availability(rows):
+    from django.db.models import OuterRef, Subquery, IntegerField, Value, F
+    from django.db.models.functions import Coalesce
+    reserved = StockReservation.objects.filter(
+        inventory_id=OuterRef('pk'), state='active', expires_at__gt=timezone.now(),
+    ).values('inventory').annotate(n=Sum('quantity')).values('n')
+    return rows.annotate(available_units=F('quantity') - Coalesce(Subquery(reserved, output_field=IntegerField()), Value(0)))
+
+
 class Stocks(Records):
     queryset = Inventory.objects.select_related('variant__product__brand', 'variant__product__model',
         'variant__product__stock_category', 'variant__supplier')
@@ -276,10 +288,8 @@ class Stocks(Records):
                 rows = rows.filter(**{column: int(value)}) if len(value) <= 18 else rows.none()
         if filters.get('active') in ('true', 'false'):
             rows = rows.filter(variant__active=filters['active'] == 'true')
-        from django.db.models import OuterRef, Subquery, IntegerField, Value, F
-        from django.db.models.functions import Coalesce
-        reserved = StockReservation.objects.filter(inventory_id=OuterRef('pk'), state='active', expires_at__gt=timezone.now()).values('inventory').annotate(n=Sum('quantity')).values('n')
-        rows = rows.annotate(available_units=F('quantity') - Coalesce(Subquery(reserved, output_field=IntegerField()), Value(0)))
+        from django.db.models import F
+        rows = stock_with_availability(rows)
         availability = filters.get('stock')
         if availability == 'empty':
             rows = rows.filter(available_units=0)
@@ -448,7 +458,9 @@ def payments(request):
         rows = rows.filter(**{field+'__pk': int(number)})
         if token:
             rows = rows.filter(**{field+'__token__istartswith': token})
-    if query.get('state'):
+    if query.get('state') == 'for_review':
+        rows = rows.filter(state__in=PAYMENTS_FOR_REVIEW)
+    elif query.get('state'):
         rows = rows.filter(state=query['state'])
     rows = filter_created_dates(rows, query)
     pagination = PageNumberPagination()
@@ -477,7 +489,8 @@ def confirm_payment(request, pk):
         if not membership_for(q.client):
             raise ValidationError('El catálogo minero requiere una afiliación vigente al confirmar la operación.')
     needs_recipe = any(line.product.requires_prescription for line in lines)
-    if needs_recipe and (not q.prescription or not q.prescription.valid or q.prescription.client_id != q.client_id or request.data.get('prescription_reviewed') is not True):
+    if needs_recipe and (not q.prescription or not q.prescription.valid or not q.prescription.file
+                         or q.prescription.client_id != q.client_id or request.data.get('prescription_reviewed') is not True):
         raise ValidationError('Revisa y confirma una receta vigente del cliente.')
     if request.data.get('confirmed') is not True:
         raise ValidationError('Confirma precios, disponibilidad y condiciones antes de solicitar el pago.')

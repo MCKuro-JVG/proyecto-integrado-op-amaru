@@ -158,32 +158,37 @@ window.AmaruCommercial=function(ctx){
    (has('change_transferconfiguration')?btn('Configurar transferencia y reservas','commerce-bank'):'')+
    panel('Buscar pagos',form('commerce-payment-search',input('q','Nombre o referencia de pago','search',chosen('q'),'')+input('rut','RUT del cliente','text',chosen('rut'),'')+
     input('folio','Folio de cotización o pedido','text',chosen('folio'),'')+input('desde','Fecha desde','date',chosen('desde'),'')+input('hasta','Fecha hasta','date',chosen('hasta'),'')+
-    select('state','Estado',paymentStates,chosen('state')),'Buscar')+link('Limpiar filtros','pagos.html'))+
+   select('state','Estado',[...paymentStates,['for_review','Por revisar']],chosen('state')),'Buscar')+link('Limpiar filtros','pagos.html'))+
    panel('Pagos registrados',table(['Referencia / Cotización','Cliente / RUT','Convenio','Monto esperado','Declarado','Fecha','Estado','Acciones'],data.results.map(p=>[
     esc(p.reference)+'<br>'+esc(p.folio),esc(p.client_name)+'<br>'+esc(p.rut),esc(p.agreement||'Particular'),currency(p.amount),p.vouchers.length?currency(p.vouchers.at(-1).declared_amount):'—',
     esc(date(p.created_at)),esc(p.state_label),link('Ver pago y comprobantes','pagos.html?pago='+p.id)])))+pages(data);
  }
  async function paymentDetail(id,modal=true,checkout=false){
   const p=await api('payments/'+id+'/');currentPayment=p;
-  const bankLabels={recipient:'Destinatario',bank:'Banco',account_type:'Tipo de cuenta',account_number:'Número de cuenta',holder_rut:'RUT del titular',email:'Correo'};
+  const bankLabels={recipient:'Titular',bank:'Banco',account_type:'Tipo de cuenta',account_number:'Número de cuenta',holder_rut:'RUT del titular',email:'Correo'};
+  const bankRows=Object.entries(bankLabels).map(([key,label])=>[label,p.bank[key]]).filter(([,value])=>value);
+  bankRows.push(['Referencia de pago',p.reference]);
+  const copyIcon=(label,value)=>`<button type="button" class="button soft button-compact copy-button" data-op="commerce-copy" data-id="${esc(value)}" aria-label="Copiar ${esc(label.toLowerCase())}" title="Copiar ${esc(label.toLowerCase())}"><span aria-hidden="true" class="copy-icon"></span></button>`;
+  const copyText=[...bankRows,['Monto total (CLP)',p.amount]].map(([label,value])=>`${label}: ${value}`).join('\n');
   let body=(checkout?checkoutSteps(['pending','rejected'].includes(p.state)?2:3):'')+note('Pago de demostración académica. No realizar transferencias reales.')+
-   (checkout?panel('Forma de pago','<p><strong>Transferencia bancaria</strong> · Única modalidad disponible en esta demostración.</p>'):'')+
-   `<h3>${esc(p.folio)}</h3><p>${esc(p.client_name)} · <strong data-payment-state>${esc(p.state_label)}</strong></p><p>Referencia: ${esc(p.reference)} ${btn('Copiar referencia','commerce-copy',p.reference)}</p>`+
-   `<p>Precio original: ${currency(p.original_amount)} · ${p.benefit.name?'Beneficio '+esc(p.benefit.name)+' · Descuento '+currency(p.benefit.discount):'Sin descuento'} · Total confirmado: <strong>${currency(p.amount)}</strong></p>`+
-   btn('Copiar monto exacto','commerce-copy',p.amount)+
-   '<dl>'+Object.entries(bankLabels).map(([key,label])=>`<dt>${label}</dt><dd>${esc(p.bank[key]||'—')} ${p.bank[key]?btn('Copiar '+label.toLowerCase(),'commerce-copy',p.bank[key]):''}</dd>`).join('')+'</dl>';
+   '<div class="transfer-layout">'+panel('Transferencia bancaria','<dl class="transfer-data">'+bankRows.map(([label,value])=>
+    `<div><dt>${esc(label)}</dt><dd><span>${esc(value)}</span>${copyIcon(label,value)}</dd></div>`).join('')+'</dl>'+
+    `<div class="actions"><button type="button" class="button soft" data-op="commerce-copy" data-id="${esc(copyText)}">Copiar todos los datos</button><span data-copy-status role="status"></span></div>`)+
+   panel('Resumen del pago',`<dl class="transfer-summary"><div><dt>Folio</dt><dd>${esc(p.folio)}</dd></div><div><dt>Cliente</dt><dd>${esc(p.client_name)}</dd></div>
+    <div><dt>Estado</dt><dd><strong data-payment-state>${esc(p.state_label)}</strong></dd></div><div><dt>Subtotal</dt><dd>${currency(p.original_amount)}</dd></div>
+    <div><dt>Descuento${p.benefit.name?' · '+esc(p.benefit.name):''}</dt><dd>${currency(p.benefit.discount||0)}</dd></div>
+    <div class="transfer-total"><dt>Total final</dt><dd><strong>${currency(p.amount)}</strong>${copyIcon('monto total',p.amount)}</dd></div></dl>`)+ '</div>';
   if(['submitted','review'].includes(p.state))body+=note('Tu comprobante está siendo revisado por Óptica Amaru. Subirlo no significa que el pago esté aprobado.');
   if(p.state==='rejected')body+=note('La óptica solicitó un nuevo comprobante: '+(p.history.at(-1)?.observations||'Revisa el archivo y vuelve a enviarlo.'));
+  if(!has('view_transferpayment')&&['pending','rejected'].includes(p.state))body+=panel('Subir comprobante de transferencia',form('commerce-voucher',hidden('id',id)+hidden('checkout',checkout?'1':'')+
+   input('declared_amount','Monto declarado CLP','number',p.amount,'required min="0" step="1"')+
+   '<div class="voucher-picker wide"><span class="document-icon" aria-hidden="true"></span><div><label for="voucher-file">Seleccionar comprobante</label><p id="voucher-formats">JPG, JPEG, PNG o PDF · Máximo 5 MB</p><input id="voucher-file" aria-describedby="voucher-formats" type="file" name="file" required accept=".jpg,.jpeg,.png,.pdf"><div class="voucher-preview" data-voucher-preview role="status"></div></div></div>','Enviar comprobante de pago'));
   body+=panel('Productos y pedido',table(['Producto','Variante','Cantidad','Precio unitario'],p.items.map(line=>[esc(line.name),esc(line.variant||'Modelo único'),line.quantity,currency(line.unit_price)]))+
    note(p.order?p.order.folio+' · '+p.order.state:'Pendiente de aprobación del pago y creación de la orden.'));
-  body+=panel('Comprobantes',table(['Fecha','Monto declarado','Archivo privado'],p.vouchers.map(v=>[
+  if(p.vouchers.length)body+=panel('Comprobantes',table(['Fecha','Monto declarado','Archivo privado'],p.vouchers.map(v=>[
    esc(date(v.created_at)),currency(v.declared_amount),actionBar(
     '<a class="button soft" target="_blank" rel="noopener noreferrer" href="'+esc(v.url+'?vista=1')+'">Ver comprobante</a>'+
     link('Descargar comprobante',v.url))])));
-  if(!has('view_transferpayment')&&['pending','rejected'].includes(p.state))body+=panel('Subir comprobante de transferencia',form('commerce-voucher',hidden('id',id)+hidden('checkout',checkout?'1':'')+
-   input('declared_amount','Monto declarado CLP','number',p.amount,'required min="0" step="1"')+
-   input('file','Comprobante JPG, PNG o PDF (máximo 5 MB)','file','','required accept=".jpg,.jpeg,.png,.pdf"')+
-   '<div class="voucher-preview wide" data-voucher-preview role="status"></div><p class="wide">Puedes reemplazar el archivo seleccionado antes de enviarlo. Máximo 5 MB.</p>','Enviar comprobante de pago'));
   if(has('change_transferpayment')&&p.vouchers.length&&!['approved','cancelled'].includes(p.state))body+=actionBar(btn('Aprobar pago','commerce-review-choice','approved')+btn('Rechazar pago','commerce-review-choice','rejected')+btn('Solicitar nuevo comprobante','commerce-review-choice','rejected'));
   if(has('change_transferpayment')&&!['approved','cancelled'].includes(p.state))body+=panel('Revisión autorizada',note('Contrasta el comprobante con los movimientos bancarios efectivos. En esta demostración se utiliza evidencia ficticia.')+
    form('commerce-review',hidden('id',id)+hidden('expected_state',p.state)+hidden('voucher',p.vouchers.at(-1)?.id||'')+
@@ -269,7 +274,17 @@ window.AmaruCommercial=function(ctx){
    case 'commerce-review-choice':{const f=screen.querySelector('[data-form=commerce-review]');f.elements.state.value=id;f.elements.observations.focus();f.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});break;}
    case 'commerce-cancel-order':dialog('Cancelar orden',note('Libera las reservas de la orden. Si existe un pago aprobado, se conserva su historial y la administración debe revisar su devolución.')+
     form('commerce-cancel-order',hidden('id',id)+input('reason','Motivo de cancelación','text','','required minlength="5" maxlength="240"')+check('confirmed','Confirmo la cancelación de esta orden.'),'Cancelar orden'));break;
-   case 'commerce-copy':await navigator.clipboard.writeText(id);message('Dato copiado.');break;
+   case 'commerce-copy':{
+    await navigator.clipboard.writeText(id);
+    const status=button.closest('.transfer-layout')?.querySelector('[data-copy-status]');
+    if(status){
+     status.textContent='Copiado';button.dataset.copied='true';
+     clearTimeout(status.copyTimer);clearTimeout(button.copyTimer);
+     status.copyTimer=setTimeout(()=>{status.textContent='';},1800);
+     button.copyTimer=setTimeout(()=>{delete button.dataset.copied;},1800);
+    }else message('Copiado');
+    break;
+   }
   }
  }
  document.addEventListener('change',event=>{
@@ -277,8 +292,8 @@ window.AmaruCommercial=function(ctx){
   if(!field.matches('[data-form="commerce-voucher"] input[type=file]'))return;
   const preview=field.form.querySelector('[data-voucher-preview]'),file=field.files[0];preview.replaceChildren();
   if(!file)return;
-  preview.textContent=file.name+' · '+(file.size/1024).toFixed(0)+' KB';
-  if(['image/jpeg','image/png'].includes(file.type)&&file.size<=5*1024*1024){const img=document.createElement('img');img.alt='Vista previa del comprobante seleccionado';img.src=URL.createObjectURL(file);img.onload=()=>URL.revokeObjectURL(img.src);preview.append(img);}
+  preview.textContent=file.name+' · '+(file.size/1024).toFixed(0)+' KB. Puedes seleccionar otro archivo para reemplazarlo.';
+  if(['image/jpeg','image/png'].includes(file.type)&&file.size<=5*1024*1024){const img=document.createElement('img');img.alt='Vista previa del comprobante seleccionado';const url=URL.createObjectURL(file);img.onload=img.onerror=()=>URL.revokeObjectURL(url);img.src=url;preview.append(img);}
  });
  return {benefitsPage,inventoryPage,paymentsPage,checkoutPage,checkoutSteps,myPayments,submit,click};
 };

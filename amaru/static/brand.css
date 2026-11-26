@@ -55,3 +55,8 @@ html[data-theme] {
 }
 #header, #nav-sidebar { color-scheme: light; }
 #header .brand-eye { display: block; }
+#header #site-name a { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; color: var(--amaru-ink); font-size: clamp(1.05rem, 2vw, 1.4rem); font-weight: 650; }
+.admin-review-links { padding: 16px; margin-bottom: 20px; border: 1px solid var(--hairline-color); border-radius: 10px; background: var(--darkened-bg); }
+.admin-review-links h2 { margin: 0 0 8px; }
+.admin-review-links ul { padding-inline-start: 18px; margin: 0; }
+.admin-review-links li { padding-block: 3px; }

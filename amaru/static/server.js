@@ -10,7 +10,9 @@ const states=['Registrada','En fabricación','Control de calidad','Disponible pa
 const names={clientes:'Clientes',recetas:'Recetas ópticas',cotizaciones:'Cotizaciones',ordenes:'Pedidos y órdenes',recepcion:'Entrega de lentes',documentos:'Documentos',solicitudes:'Agendamientos y contactos',garantias:'Garantías y reparaciones',inventario:'Inventario'};
 const endpoints={clientes:'clients',recetas:'prescriptions',cotizaciones:'quotes',ordenes:'orders',recepcion:'orders',documentos:'receipts',solicitudes:'inquiries',garantias:'warranties',inventario:'inventory'};
 const has=p=>session.permissions.includes('gestion.'+p);
-const btn=(label,action,id='')=>`<button class="button primary" type="button" data-op="${action}" data-id="${esc(id)}">${label}</button>`;
+const compactActions=new Set(['cart-remove','quote-edit','client-edit','worker-edit','agreement-edit','file','quote-detail','inquiry-detail']);
+const secondaryActions=new Set(['reload','logout','commerce-bank','commerce-cancel-order','worker-disable','union-suspend']);
+const btn=(label,action,id='')=>`<button class="button ${compactActions.has(action)?'soft compact':secondaryActions.has(action)?'soft':'primary'}" type="button" data-op="${action}" data-id="${esc(id)}">${label}</button>`;
 const link=(text,url)=>`<a class="button soft" href="${esc(url)}">${text}</a>`;
 const note=t=>`<div class="notice">${esc(t)}</div>`;
 const head=(title,description='')=>`<div class="page-heading"><div><div class="eyebrow">Ópticas Amaru · Aplicación académica</div><h1>${esc(title)}</h1><p>${esc(description)}</p></div></div>`;
@@ -191,9 +193,10 @@ async function renderUnionAdmin(){
  unions.map(u=>panel(u.name,`<p>${esc(u.identifier)} · ${esc(unionStates[u.state])} · ${textDate(u.starts_on)} a ${textDate(u.ends_on)}</p>`+
   unionDocument(u)+`<div class="actions union-nav">`+link('Ver trabajadores','sindicatos.html?union='+u.id)+link('Códigos QR de atención','qr_organizacion.html?organizacion='+u.agreement_id)+btn('Editar datos institucionales','union-edit',u.id)+btn('Asociar PDF','union-upload',u.id)+btn('Reemitir invitación del representante','union-invite',u.id)+
   (u.state==='active'?btn('Suspender sindicato','union-suspend',u.id):u.document?.signed_at?btn('Activar sindicato','union-activate',u.id):'')+'</div>')).join('')+
- panel('Vinculaciones y recuperaciones pendientes',table(['Organización','Trabajador','RUT','Acciones'],requests.map(r=>[
+ '<div id="validaciones">'+panel('Vinculaciones y recuperaciones pendientes',table(['Organización','Trabajador','RUT','Acciones'],requests.map(r=>[
   esc(r.organization),esc(r.name),esc(r.rut),(r.state==='pending'&&r.accepted_at?btn('Verificar y vincular','worker-review',r.id):r.state==='pending'?btn('Invitar al titular','worker-reissue',r.id):'')+
-  (r.recovery_requested_at?btn('Preparar recuperación','worker-reset',r.id):'')])));
+  (r.recovery_requested_at?btn('Preparar recuperación','worker-reset',r.id):'')])))+'</div>';
+ if(params.get('vista')==='validaciones')screen.querySelector('#validaciones').scrollIntoView({block:'start'});
 }
 function showUnionForm(){
  dialog('Registrar sindicato',form('union-new',input('name','Nombre del sindicato')+
@@ -244,8 +247,7 @@ async function render(){
  }
  }
  else if(page==='dashboard'){
- const results=await Promise.all(['clients/','orders/','receipts/','inquiries/'].map(p=>api(p).catch(()=>null)));
- screen.innerHTML=head('Resumen de atención','Información persistida en la base de datos del servidor.')+`<div class="stats dashboard-stats">${results.map((r,i)=>`<article class="stat"><div>${['Clientes','Órdenes de trabajo','Entregas registradas','Solicitudes de atención'][i]}</div><strong>${r?r.count:'Sin permiso'}</strong></article>`).join('')}</div>`+(results[1]?panel('Pedidos recientes',ordersTable(results[1].results)):note('No tienes acceso a las órdenes.'))+'<div class="actions" aria-label="Accesos del panel">'+link('Bitácora','/auditoria/')+(session.django_admin?link('Administración del sistema','/admin/'):'' )+(has('change_union')?link('Sindicatos','sindicatos.html'):'')+(has('add_receipt')?link('Validar retiro de lentes','retiro.html'):'')+(has('view_agreement')?link('Gestión de convenios','convenios.html'):'')+(has('view_product')?link('Administración de catálogo','catalogo.html?gestion=1'):'')+(has('view_inquiry')?btn('Mostrar QR de atención','attention-qr')+link('Solicitudes recibidas','solicitudes.html'):'')+'</div>';
+ await renderStaffSummary();
  }
  else if(page==='detalle_cliente'){
  const c=await api('clients/'+params.get('cliente')+'/');screen.innerHTML=head(c.name,c.rut)+panel('Ficha de cliente',`<p>${esc(c.phone)} · ${esc(c.email)}</p><p>${esc(c.category)} · Contacto posventa: ${c.consent?'Autorizado':'No autorizado'}</p><p>Estado: ${c.active?'Activo':'Inactivo'}</p>`+btn('Editar ficha','client-edit',c.id)) +link('Clientes','clientes.html');
@@ -509,12 +511,13 @@ async function renderCart(){
   const r=await api('purchases/'+encodeURIComponent(params.get('solicitud'))+'/');
   if(r.payment){location.replace('carrito.html?pago='+r.payment);return;}
   screen.innerHTML=head('Revisión previa al pago')+commercial.checkoutSteps(1)+
-   note('Recibimos tu selección. La óptica debe confirmar el precio o revisar la receta antes de habilitar la transferencia.')+
+   note(r.prescription?'Recibimos tu selección y tu receta privada. Cuando la óptica revise la receta y confirme el monto, podrás retomar la compra aquí o desde Mis pedidos.':'Recibimos tu selección. Cuando la óptica confirme el monto y las existencias, podrás retomar la compra aquí o desde Mis pedidos.')+
    note('Referencia: '+r.reference+' · Estado: '+r.state)+panel('Productos',table(['Producto','Variante','Cantidad'],r.items.map(i=>[esc(i.product_name),esc(i.variant||'Modelo único'),i.quantity])))+
    btn('Comprobar si el pago está disponible','reload')+link('Mis pedidos','consulta.html')+link('Volver al carrito','carrito.html');return;
  }
  const items=readCart();
  screen.innerHTML=head('Mi carrito','Revisa tu selección y continúa con la transferencia académica.')+commercial.checkoutSteps(1)+link('Seguir explorando','catalogo.html');
+ if(params.get('agregado')==='1')message('Producto agregado al carrito.');
  if(!items.length){screen.innerHTML+=note('Tu carrito está vacío.')+(session.client_id?link('Retomar mis pagos','pagos.html'):'');return;}
  const ids=[...new Set(items.map(i=>i.product))];
  const {results}=await api('products/?ids='+ids.join(','));
@@ -534,30 +537,33 @@ async function renderCart(){
  const needsRecipe=items.some(i=>products.get(i.product).requires_prescription);
  let pricing=null,priceError='';
  try{pricing=await api('checkout-preview/',{method:'POST',body:{items,mode:'compra',reason:'Vista previa del carrito',contact_authorized:true,idempotency_key:crypto.randomUUID()}});}catch(e){priceError=e.message;}
- const ready=pricing&&!pricing.pending&&Number(pricing.amount)>0&&!needsRecipe&&items.every(i=>products.get(i.product).direct_checkout);
+ const ready=pricing&&!pricing.pending&&Number(pricing.amount)>0&&!pricing.blockers.length&&!pricing.review.length;
+ const issues=[...(pricing?.blockers||[]),...(pricing?.review||[])];
+ const canReview=pricing&&!pricing.blockers.length;
  screen.innerHTML+=panel('Resumen de compra',`<p>${esc(profile.name)} · ${esc(profile.phone)} · ${esc(profile.email||'Sin correo')}</p>`+
   note(profile.agreement?'Convenio validado y vigente: '+profile.agreement:'Atención particular')+
   (pricing&&!pricing.pending?'<dl class="checkout-totals"><dt>Subtotal</dt><dd>'+currency(pricing.original)+'</dd><dt>Beneficio aplicable</dt><dd>'+esc(pricing.benefit.name||'Sin descuento')+' · '+currency(pricing.benefit.discount||0)+'</dd><dt>Total final en CLP</dt><dd><strong>'+currency(pricing.amount)+'</strong></dd></dl>':note(priceError||'Un precio necesita confirmación previa de la óptica.'))+
   (pricing?.benefits?.length?'<details class="checkout-benefits"><summary>Beneficios para esta selección</summary><p>Se aplica automáticamente el mayor descuento compatible.</p><ul>'+
    pricing.benefits.map(b=>'<li>'+esc(b.name)+' · '+esc(b.compatible?currency(b.discount):b.reason)+'</li>').join('')+'</ul></details>':'')+
-  note(ready?'El servidor volverá a comprobar precios, beneficios y disponibilidad al continuar.':'Antes de pagar, la óptica debe confirmar los precios, las existencias o la receta requerida.')+
+  (issues.length?'<div class="notice"><strong>'+ (canReview?'Qué falta para continuar al pago':'Ajusta tu selección') +'</strong><ul>'+issues.map(issue=>'<li>'+esc(issue)+'</li>').join('')+'</ul></div>':
+   note(ready?'Volveremos a comprobar los precios, beneficios y disponibilidad al continuar.':priceError||'La óptica debe confirmar el total antes de habilitar la transferencia.'))+
   (needsRecipe?note('Adjunta o selecciona tu receta vigente para enviarla a revisión. La carga por sí sola no sustituye la revisión óptica.'):'')+
   note('Pago de demostración académica. No realizar transferencias reales.')+
-  form('checkout',hidden('mode','compra')+select('prescription','Receta privada',[['','No corresponde / selecciona si se requiere'],...recipes.map(r=>[r.id,'Receta del '+r.issued_on])])+
+  form('checkout',hidden('mode','compra')+(needsRecipe?select('prescription','Receta privada',[['','Selecciona una receta vigente'],...recipes.map(r=>[r.id,'Receta del '+r.issued_on])]):'')+
    area('reason','Observaciones','Confirmo mi selección académica del catálogo.')+check('contact_authorized','Autorizo el contacto para gestionar esta operación.')+
-   check('confirmed','Confirmo los productos, cantidades y total mostrados. Entiendo que es una demostración sin transferencias reales.'),'Continuar al pago')+
+   (ready?check('confirmed','Confirmo los productos, cantidades y total mostrados. Entiendo que es una demostración sin transferencias reales.'):'') ,'Continuar al pago')+
   '<details><summary>Adjuntar receta privada</summary>'+form('cart-recipe',input('issued_on','Fecha de emisión','date')+input('file','JPG, PNG o PDF','file','','required accept=".jpg,.jpeg,.png,.pdf"'),'Guardar receta')+'</details>'+link('Agendar evaluación','formulario_remoto.html'));
  const checkout=screen.querySelector('[data-form=checkout]');checkout.dataset.expected=pricing?.amount||'';
  checkout.dataset.direct=ready?'1':'0';checkout.querySelector('[type=submit]').disabled=!ready;
- checkout.querySelector('.form-actions').insertAdjacentHTML('beforeend','<button type="submit" class="button soft" data-checkout-review>'+(ready?'Solicitar cotización en lugar de pagar':'Solicitar revisión previa')+'</button>');
- checkout.elements.prescription.required=needsRecipe;
+ if(canReview)checkout.querySelector('.form-actions').insertAdjacentHTML('beforeend','<button type="submit" class="button soft" data-checkout-review>'+(ready?'Solicitar cotización':'Solicitar revisión previa')+'</button>');
+ if(needsRecipe)checkout.elements.prescription.required=true;
  checkout.elements.contact_authorized.required=true;
 }
 async function purchaseDetail(id){
  const purchase=await api('purchases/'+id+'/');
  const rows=purchase.items.map(i=>[esc(i.product_name),esc(i.variant||'Modelo único'),esc(i.quantity),i.unit_price==null?'Por cotizar':currency(i.unit_price)]);
  let actions='';
- if(purchase.quote)actions=link('Abrir cotizaciones','cotizaciones.html');
+ if(purchase.quote&&has('view_quote'))actions=btn('Abrir cotización','quote-detail',purchase.quote);
  else if(has('add_quote')&&has('view_quote')&&!['Cerrada','Cancelada'].includes(purchase.state)){
   const fields=purchase.items.map(i=>input('price_'+i.id,'Precio unitario CLP','number',i.unit_price??'','required min="0" max="999999999" step="1"')).map((field,index)=>'<div><p>'+esc(purchase.items[index].product_name)+' · '+esc(purchase.items[index].variant)+'</p>'+field+'</div>').join('');
   actions=form('purchase-quote',`<input name="id" type="hidden" value="${esc(id)}">`+fields,'Crear borrador de cotización');
@@ -725,10 +731,25 @@ async function showAttentionQR(){
 }
 function printAttentionQR(){const img=document.getElementById('attention-qr');if(!img)return;const win=window.open('about:blank','_blank');if(!win)throw new Error('Permite abrir la ventana de impresión.');win.document.write('<!doctype html><title>QR — Ópticas Amaru</title><style>body{font:20px sans-serif;text-align:center}img{width:440px;max-width:90%}p{overflow-wrap:anywhere}</style><h1>Formulario de atención — Ópticas Amaru</h1><p>Escanea para dejar tu solicitud</p><img alt="QR" src="'+img.src+'"><p>'+esc(document.querySelector('.qr-url').textContent)+'</p>');win.document.close();win.onload=()=>win.print();}
 
+async function renderStaffSummary(){
+ const [totals,orders]=await Promise.all([api('staff-summary/'),has('view_order')?api('orders/'):null]);
+ const entries=[['inquiries','Solicitudes pendientes','solicitudes.html?status=pendientes'],
+  ['quotes','Cotizaciones pendientes','cotizaciones.html?estado=pendientes'],['payments','Pagos por revisar','pagos.html?state=for_review'],
+  ['workers','Afiliaciones sindicales pendientes','sindicatos.html?vista=validaciones'],
+  ['ready','Pedidos listos para retiro','ordenes.html?status='+encodeURIComponent('Disponible para retiro')],
+  ['stock','Variantes con stock bajo','inventario.html?vista=alertas&stock=low&active=true']];
+ const cards=entries.filter(([key])=>Object.hasOwn(totals,key)).map(([key,label,route])=>
+  `<a class="stat summary-card" href="${route}"><span>${label}</span><strong>${totals[key]}</strong></a>`).join('');
+ screen.innerHTML=head('Resumen de atención')+(cards?`<div class="stats dashboard-stats">${cards}</div>`:'')+
+  '<div class="actions section-actions">'+(has('view_inquiry')?btn('Mostrar QR de atención','attention-qr'):'')+
+  (has('add_receipt')?link('Validar retiro de lentes','retiro.html'):'')+'</div>'+
+  (orders?panel('Pedidos recientes',ordersTable(orders.results)):'');
+}
+
 function ordersTable(rows,own=false){return table(['Orden','Cliente','Producto','Estado','Acción'],rows.map(o=>[esc(o.folio),esc(o.client_name),esc(Object.values(o.characteristics).join(' · ')),badge(o.status),`<div class="actions">${o.status==='Disponible para retiro'?(own?btn('Ver código de retiro','pickup-owner',o.id):link('Revisar retiro','recepcion.html?pedido='+o.id)):''}${!own&&!['Entregada','Cancelada'].includes(o.status)&&has('change_order')?btn('Actualizar','order-state',o.id)+btn('Cancelar orden','commerce-cancel-order',o.id):''}${o.status==='Entregada'?link('Documentos','documentos.html'):''}</div>`]));}
 async function modulePage(){
  if(page==='cotizaciones'){await renderQuotes();return;}
- const endpoint=endpoints[page],q=page==='clientes'&&params.get('q')?'?q='+encodeURIComponent(params.get('q')):page==='solicitudes'?'?'+new URLSearchParams([...params].filter(([k])=>['status','day','verification','agreement'].includes(k))):'';
+ const endpoint=endpoints[page],q=page==='clientes'&&params.get('q')?'?q='+encodeURIComponent(params.get('q')):page==='solicitudes'?'?'+new URLSearchParams([...params].filter(([k])=>['status','day','verification','agreement'].includes(k))):page==='ordenes'&&params.get('status')?'?status='+encodeURIComponent(params.get('status')):'';
  const data=await list(endpoint+'/'+q);let body='',action='';
  if(page==='clientes'){
  action=has('add_client')?btn('Registrar cliente','client-new'):'';
@@ -740,7 +761,7 @@ async function modulePage(){
  else if(page==='documentos')body=table(['Documento','Orden','Cliente','Fecha','Acción'],data.results.map(d=>[esc(d.id),esc(d.order_folio),esc(d.client_name),date(d.created_at),btn('Ver documento / PDF','file','receipts/'+d.id+'/pdf/')]));
  else if(page==='solicitudes'){
  action=btn('Mostrar QR de atención','attention-qr')+btn('Actualizar solicitudes','reload');
- body=form('inquiry-filter',select('status','Estado',[['','Todos'],...['Nueva','En revisión','Contactada','Cerrada','Cancelada']],params.get('status')||'')+input('day','Fecha de recepción','date',params.get('day')||'',''),'Filtrar')+
+ body=form('inquiry-filter',select('status','Estado',[['','Todos'],['pendientes','Pendientes'],...['Nueva','En revisión','Contactada','Cerrada','Cancelada']],params.get('status')||'')+input('day','Fecha de recepción','date',params.get('day')||'',''),'Filtrar')+
  table(['ID / recepción','Solicitante','Tipo / origen','Estado','Acción'],data.results.map(r=>[esc(r.id)+'<br>'+date(r.created_at),esc(r.name),esc(r.origin==='qr_worker'?'Registro de trabajador':r.origin==='qr_inquiry'?'Consulta de organización':r.kind)+'<br>'+esc(r.origin_label||(r.source==='qr'?'Código QR':'Sitio web')),badge(r.status),btn('Ver detalle','inquiry-detail',r.id)+(has('change_inquiry')?btn('Revisar estado','inquiry-state',r.id):'')]));
  }
  else if(page==='garantias'){
@@ -771,7 +792,7 @@ async function clientForm(id){
 async function recipeForm(){
  const clients=await api('clients/');dialog('Receta óptica',form('recipe',select('client','Cliente',clients.results.map(c=>[c.id,c.name+' · '+c.rut]))+input('issued_on','Fecha de emisión','date','','required')+input('file','Archivo privado PDF, JPG o PNG','file','','required accept=".pdf,.png,.jpg,.jpeg"')+input('physical_reference','Referencia física','text','',''))+note('Se valida contenido y tamaño máximo de 10 MB en el servidor. El archivo no se guarda en localStorage.'));
 }
-const quoteFilters=['rut','folio','desde','hasta','orden'];
+const quoteFilters=['rut','folio','desde','hasta','orden','estado'];
 function quoteState(quote){return quote.converted?'Convertida en orden':quote.approved?'Aprobada':'Borrador';}
 function quoteDate(value){return new Intl.DateTimeFormat('es-CL',{dateStyle:'medium',timeZone:'America/Santiago'}).format(new Date(value));}
 
@@ -783,7 +804,8 @@ async function renderQuotes(){
   input('folio','Folio de cotización','search',params.get('folio')||'','maxlength="32"')+
   input('desde','Fecha desde','date',params.get('desde')||'','')+
   input('hasta','Fecha hasta','date',params.get('hasta')||'','')+
-  select('orden','Ordenar por',ordering,params.get('orden')||'fecha-desc'),'Buscar');
+  select('orden','Ordenar por',ordering,params.get('orden')||'fecha-desc')+
+  select('estado','Estado',[['','Todas'],['pendientes','Pendientes']],params.get('estado')||''),'Buscar');
  screen.innerHTML=head('Cotizaciones','Busca por RUT, folio o fecha. El historial del RUT buscado se muestra bajo la ficha del cliente.')+
   (has('add_quote')?btn('Nueva cotización','quote-new'):'')+
   panel('Buscar cotizaciones',filters.replace('</div><p class="form-feedback"',link('Limpiar filtros','cotizaciones.html')+'</div><p class="form-feedback"'));
@@ -808,14 +830,33 @@ async function quoteDetail(id){
  const q=await api('quotes/'+id+'/');
  const details=[['Cliente',q.client_name],['RUT',q.client_rut],['Fecha',quoteDate(q.created_at)],['Monto',currency(q.amount)],['Estado',quoteState(q)],['Convenio',q.agreement_name||'—'],['Observaciones',q.notes||'—']];
  const lines=q.lines.map(line=>[esc(line.name),esc(line.variant||'—'),esc(line.quantity),currency(line.unit_price)]);
+ const actions=(q.prescription&&has('view_prescription')?btn('Abrir receta privada','file','prescriptions/'+q.prescription+'/file/'):'')+
+  (!q.converted&&!q.confirmed_at&&has('change_quote')?btn('Editar / aprobar','quote-edit',q.id):'')+
+  (!q.converted&&q.approved&&!q.confirmed_at&&has('add_transferpayment')?btn('Confirmar monto y pago','commerce-confirm-payment',q.id):'')+
+  (q.confirmed_at?link('Consultar pago','pagos.html?folio='+encodeURIComponent(q.folio)):'');
  dialog(esc(q.folio),'<dl>'+details.map(([key,value])=>'<dt>'+key+'</dt><dd>'+esc(value)+'</dd>').join('')+'</dl>'+
-  (lines.length?table(['Producto','Variante','Cantidad','Precio unitario'],lines):''));
+  (lines.length?table(['Producto','Variante','Cantidad','Precio unitario'],lines):'')+'<div class="actions">'+actions+'</div>');
 }
 
 function withCurrentOption(options,id,label){return id&&!options.some(([value])=>value===id)?[[id,label],...options]:options;}
 async function quoteForm(id){
  const [clients,recipes,agreements,q]=await Promise.all([api('clients/'),api('prescriptions/'),api('agreements/'),id?api('quotes/'+id+'/'):Promise.resolve({characteristics:{}})]);
- dialog('Cotización',form('quote',`<input type="hidden" name="id" value="${esc(id||'')}">`+select('client','Cliente',withCurrentOption(clients.results.map(c=>[c.id,c.name]),q.client,q.client_name),q.client)+select('prescription','Receta',[['','Sin receta'],...withCurrentOption(recipes.results.map(r=>[r.id,'Cliente '+r.client+' · '+r.issued_on+' · '+r.status]),q.prescription,'Receta #'+q.prescription)],q.prescription)+select('category','Modalidad',[['particular','Particular'],['convenio','Convenio']],q.category)+select('agreement','Convenio',[['','No corresponde'],...withCurrentOption(agreements.results.map(a=>[a.id,a.name]),q.agreement,q.agreement_name)],q.agreement)+select('product_type','Tipo de lentes',[['particular','Particular'],['seguridad','Seguridad']],q.product_type)+input('frame','Armazón / modelo','text',q.characteristics.frame||q.characteristics.security_model||'')+input('crystal','Cristal / color','text',q.characteristics.crystal||q.characteristics.security_color||'')+select('focus','Enfoque',['monofocal','multifocal'],q.characteristics.focus)+input('amount','Monto CLP','number',q.amount||0,'required min="0" step="1"')+input('notes','Observaciones','text',q.notes||'','')+check('approved','Cotización aprobada por el cliente')));
+ const catalogDraft=q.lines?.length>0&&!q.characteristics.focus;
+ const focusOptions=[['','Selecciona según la revisión'],['monofocal','Monofocal'],['multifocal','Multifocal'],['no_aplica','No corresponde']];
+ dialog('Cotización',(catalogDraft?note('Revisa la selección y completa las características de los lentes antes de registrar la aprobación. Si hay receta, ábrela para comprobar los datos.'):'')+
+  (catalogDraft&&q.prescription&&has('view_prescription')?btn('Abrir receta privada','file','prescriptions/'+q.prescription+'/file/'):'')+
+  form('quote',hidden('id',id||'')+
+   select('client','Cliente',withCurrentOption(clients.results.map(c=>[c.id,c.name]),q.client,q.client_name),q.client)+
+   select('prescription','Receta',[['','Sin receta'],...withCurrentOption(recipes.results.map(r=>[r.id,'Receta del '+r.issued_on+' · '+r.status]),q.prescription,'Receta de la solicitud')],q.prescription)+
+   select('category','Modalidad',[['particular','Particular'],['convenio','Convenio']],q.category)+
+   select('agreement','Convenio',[['','No corresponde'],...withCurrentOption(agreements.results.map(a=>[a.id,a.name]),q.agreement,q.agreement_name)],q.agreement)+
+   select('product_type','Tipo de lentes',[['particular','Particular'],['seguridad','Seguridad']],q.product_type)+
+   input('frame','Armazón / modelo','text',q.characteristics.frame||q.characteristics.security_model||(q.lines?.length===1?q.lines[0].name:''))+
+   input('crystal','Cristal / color','text',q.characteristics.crystal||q.characteristics.security_color||'')+
+   select('focus','Enfoque',focusOptions,q.characteristics.focus||'')+
+   input('amount','Monto CLP','number',q.amount||0,'required min="0" step="1"')+
+   input('notes','Observaciones','text',q.notes||'','')+check('approved','Cotización aprobada por el cliente')));
+ document.querySelector('[data-form="quote"] [name=focus]').required=true;
  document.querySelector('[name=approved]').checked=!!q.approved;
 }
 async function warrantyForm(id){
@@ -865,7 +906,7 @@ document.addEventListener('submit',async e=>{
  case 'membership-start':location.href='formulario_remoto.html?registro_convenio=1&convenio='+encodeURIComponent(data.code.trim());return;
  case 'membership-status':{const result=await api('membership/status/',{method:'POST',body:data});f.querySelector('.form-feedback').textContent='Estado: '+result.state;return;}
  case 'representative-review':{if(data.approved==='false'&&!data.confirmed)throw new Error('Marca la confirmación para rechazar la solicitud.');const id=data.id;delete data.id;delete data.confirmed;data.identity_verified=!!data.identity_verified;await api('membership/queue/'+id+'/',{method:'POST',body:data});break;}
- case 'cart-add':{const items=readCart(),product=Number(data.product),quantity=Number(data.quantity),variant=data.variant;const line=items.find(i=>i.product===product&&i.variant===variant);if(line){if(line.quantity+quantity>99)throw new Error('El máximo por variante es 99.');line.quantity+=quantity;}else{if(items.length>=20)throw new Error('El carrito admite hasta 20 selecciones.');items.push({product,variant,quantity});}saveCart(items);location.href='carrito.html';return;}
+ case 'cart-add':{const items=readCart(),product=Number(data.product),quantity=Number(data.quantity),variant=data.variant;const line=items.find(i=>i.product===product&&i.variant===variant);if(line){if(line.quantity+quantity>99)throw new Error('El máximo por variante es 99.');line.quantity+=quantity;}else{if(items.length>=20)throw new Error('El carrito admite hasta 20 selecciones.');items.push({product,variant,quantity});}saveCart(items);location.href='carrito.html?agregado=1';return;}
  case 'cart-recipe':await api('my-prescriptions/',{method:'POST',body:new FormData(f)});await renderCart();message('Receta privada guardada. Selecciónala para continuar.');return;
  case 'checkout':{
   const direct=!e.submitter?.hasAttribute('data-checkout-review');
@@ -1104,7 +1145,7 @@ if(staffToggle){
   apply();
   if(restoreFocus)staffToggle.focus();
  }
- function links(){return [...nav.querySelectorAll('a[href]')].filter(a=>!a.hidden&&a.getClientRects().length);}
+ function links(){return [...nav.querySelectorAll('a[href], summary')].filter(a=>!a.hidden&&a.getClientRects().length);}
  staffToggle.addEventListener('click',()=>{
   if(mobile.matches){
    if(drawer){closeDrawer(true);return;}
@@ -1134,6 +1175,25 @@ if(staffToggle){
  });
  apply();
 }
+
+function groupStaffNavigation(nav){
+ const groups=[
+  ['Atención y clientes',['clientes.html','solicitudes.html','recetas.html']],
+  ['Ventas y pedidos',['cotizaciones.html','pagos.html','ordenes.html','recepcion.html','retiro.html','documentos.html','garantias.html']],
+  ['Convenios y sindicatos',['convenios.html','sindicatos.html','beneficios.html']],
+  ['Productos e inventario',['catalogo.html?gestion=1','inventario.html']],
+  ['Administración',['/admin/','/auditoria/']],
+ ];
+ const links=new Map([...nav.querySelectorAll('a:not([hidden])')].map(a=>[a.getAttribute('href'),a]));
+ for(const [label,routes] of groups){
+  const items=routes.map(route=>links.get(route)).filter(Boolean);
+  if(!items.length)continue;
+  const group=document.createElement('details'),title=document.createElement('summary');
+  group.className='staff-nav-group';title.textContent=label;
+  group.open=items.some(a=>a.matches('[aria-current="page"]'));
+  group.append(title,...items);nav.append(group);
+ }
+}
 (async()=>{try{
  session=await api('session/');csrf=session.csrf;
  if(session.authenticated)document.querySelector('[data-signup-nav]')?.remove();
@@ -1146,7 +1206,10 @@ if(staffToggle){
    [session.client_id&&!has('view_transferpayment'),'Mis pagos','pagos.html'],
    [has('view_agreement'),'Convenios','convenios.html'],
    [has('change_union'),'Sindicatos','sindicatos.html'],
+   [has('view_product'),'Administrar catálogo','catalogo.html?gestion=1'],
+   [has('add_receipt'),'Validar retiro','retiro.html'],
    [session.django_admin,'Administración del sistema','/admin/'],
+   [has('view_audit'),'Bitácora','/auditoria/'],
   ];
   for(const [allowed,label,route] of items){
    if(!allowed)continue;
@@ -1166,6 +1229,7 @@ if(staffToggle){
  }
  const navigation={clientes:'view_client',recetas:'view_prescription',cotizaciones:'view_quote',ordenes:'view_order',recepcion:'add_receipt',documentos:'view_receipt',solicitudes:'view_inquiry',garantias:'view_warranty',inventario:'view_inventory'};
  document.querySelectorAll('.sidebar a[href]').forEach(a=>{const route=a.getAttribute('href').split('.')[0];if(navigation[route]&&!has(navigation[route]))a.hidden=true;});
+ if(staffNav&&Object.values(navigation).some(has))groupStaffNavigation(staffNav);
  if(session.authenticated&&!has('view_order')&&['recepcion','documentos'].includes(page)){
   const side=document.querySelector('.sidebar');if(side)side.hidden=true;
   const app=document.querySelector('.app');if(app)app.style.display='block';

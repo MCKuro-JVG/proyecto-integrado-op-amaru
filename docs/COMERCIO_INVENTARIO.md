@@ -78,3 +78,14 @@ Antes del despliegue se necesita respaldo de MariaDB, revisión de migrate --pla
 ## Condiciones que debe confirmar la empresa
 
 Beneficios y reglas de acumulación, precios, catálogo oficial, reservas, devoluciones y cancelaciones después de emitir orden, cuentas bancarias autorizadas, permisos de quienes revisan pagos, conservación de comprobantes, condiciones de firma y garantías. Los datos clínicos, nóminas y documentos reales requieren infraestructura y procedimientos aprobados por Ópticas Amaru.
+
+## Compra particular y revisión de receta
+
+- Un cliente particular puede pagar directamente cuando el catálogo tiene un precio habilitado para la compra, una variante inventariable activa y unidades disponibles. El carrito comprueba el stock descontando las reservas vigentes. Se vuelve a comprobar el importe y se reserva el stock al confirmar.
+- Si hace falta revisar una receta o confirmar un precio, el cliente usa **Solicitar revisión previa**. El vendedor abre **Solicitudes**, revisa la receta privada, crea y aprueba la cotización y usa **Confirmar monto y pago**. El cliente retoma el proceso en **Mis pedidos → Mis solicitudes → Consultar revisión y pago**.
+- El panel del personal enlaza al trabajo pendiente que corresponde a cada tarjeta de resumen. En Django Admin, **Revisiones pendientes** lleva a cada flujo autorizado de activación, afiliación o pagos.
+- Para disponer de dos armazones ficticios en una base académica ejecuta el comando siguiente con un usuario autorizado para registrar movimientos. Se conserva la configuración de los productos preexistentes.
+
+  ```shell
+  python amaru/manage.py seed_particular_checkout_demo --academic --actor administrador_comercial_demo
+  ```

@@ -1,6 +1,8 @@
 """Solicitudes de compra sin cobro y su conversión a cotizaciones en revisión."""
 from django.db import transaction
+from django.db.models import Prefetch, Q, Sum
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.decorators import api_view
 from rest_framework.exceptions import APIException, PermissionDenied, ValidationError
@@ -10,7 +12,7 @@ from rest_framework.decorators import throttle_classes
 
 from .catalog_requests import own_client
 from .membership import verified_agreement
-from .models import Client, Inquiry, Prescription, Product, PurchaseLine, Quote, QuoteLine
+from .models import Client, Inquiry, Prescription, Product, ProductVariant, PurchaseLine, Quote, QuoteLine
 from .services import audit
 
 
@@ -161,7 +163,15 @@ def preview(request):
     form.is_valid(raise_exception=True)
     lines = []
     selections = form.validated_data['items']
-    products = Product.objects.filter(active=True).in_bulk({item['product'] for item in selections})
+    variants = ProductVariant.objects.select_related('stock').annotate(
+        reserved_quantity=Sum('stock__reservations__quantity', filter=Q(
+            stock__reservations__state='active', stock__reservations__expires_at__gt=timezone.now(),
+        ), default=0),
+    )
+    products = Product.objects.filter(active=True).prefetch_related(
+        Prefetch('stock_variants', queryset=variants, to_attr='checkout_variants'),
+    ).in_bulk({item['product'] for item in selections})
+    blockers, review = [], []
     for selected in selections:
         product = products.get(selected['product'])
         if product is None:
@@ -172,12 +182,25 @@ def preview(request):
                 raise PermissionDenied()
         if selected['variant'] not in (product.variants or ['']):
             raise ValidationError('La variante no corresponde al producto.')
-        if product.reference_price is None:
-            return Response({'pending': True})
+        variant = next((row for row in product.checkout_variants if row.label == selected['variant'] and row.active), None)
+        stock = getattr(variant, 'stock', None)
+        label = f"{product.name} · {selected['variant']}" if selected['variant'] else product.name
+        if product.checkout_variants and not stock:
+            blockers.append(f'{label}: la variante seleccionada no está disponible.')
+        elif stock and selected['quantity'] > stock.quantity - variant.reserved_quantity:
+            blockers.append(f'{label}: stock insuficiente para la cantidad seleccionada.')
+        elif not stock:
+            review.append(f'{label}: la óptica debe confirmar las existencias.')
+        if not product.direct_checkout or not product.reference_price:
+            review.append(f'{label}: la óptica debe confirmar el precio.')
+        if product.requires_prescription:
+            review.append(f'{label}: adjunta una receta vigente para que la óptica la revise.')
         lines.append({'product': product, 'price': product.reference_price, 'quantity': selected['quantity']})
+    result = {'blockers': blockers, 'review': review, 'pending': any(line['price'] is None for line in lines)}
+    if result['pending']:
+        return Response(result)
     original, final, snapshot, options = calculate(client, lines, include_options=True)
-    return Response({'original': str(original), 'amount': str(final), 'benefit': snapshot,
-                     'benefits': options, 'pending': False})
+    return Response({**result, 'original': str(original), 'amount': str(final), 'benefit': snapshot, 'benefits': options})
 
 
 def confirm_retry(row, client, values):

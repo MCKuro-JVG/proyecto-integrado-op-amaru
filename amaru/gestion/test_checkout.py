@@ -116,6 +116,49 @@ class CartCheckoutTests(TestCase):
         self.assertFalse(TransferPayment.objects.exists())
         self.assertFalse(Inquiry.objects.filter(kind='compra').exists())
 
+    def test_preview_explains_price_and_recipe_and_checks_unreserved_units(self):
+        self.product.requires_prescription = True
+        self.product.reference_price = None
+        self.product.save()
+        preview = self.post('checkout-preview/', self.payload(), self.owner)
+        self.assertEqual(preview.status_code, 200, preview.content)
+        self.assertTrue(preview.json()['pending'])
+        self.assertEqual(len(preview.json()['review']), 2)
+        self.product.requires_prescription = False
+        self.product.reference_price = 10000
+        self.enable()
+        self.assertEqual(self.checkout().status_code, 201)
+        remaining = self.post('checkout-preview/', self.payload(items=[{
+            'product': self.product.pk, 'variant': '', 'quantity': 4,
+        }]), self.owner)
+        self.assertIn('stock insuficiente', remaining.json()['blockers'][0])
+
+    def test_particular_purchase_with_recipe_reopens_for_payment_after_review(self):
+        self.product.requires_prescription = True
+        self.product.save()
+        prescription = Prescription.objects.create(client=self.person, issued_on=timezone.localdate(),
+            file=SimpleUploadedFile('receta-ficticia.png', png(), content_type='image/png'))
+        result = self.post('checkout/', self.payload(mode='cotizacion', prescription=prescription.pk), self.owner)
+        self.assertEqual(result.status_code, 201, result.content)
+        purchase_id = result.json()['id']
+        quoted = self.post(f'purchases/{purchase_id}/quote/', {}, self.seller)
+        self.assertEqual(quoted.status_code, 201, quoted.content)
+        quote = Quote.objects.get(pk=quoted.json()['id'])
+        self.client.force_login(self.seller)
+        approval = self.client.patch(f'/api/quotes/{quote.pk}/', {
+            'approved': True, 'characteristics': {'frame': self.product.name, 'crystal': 'Cristal ficticio', 'focus': 'monofocal'},
+        }, content_type='application/json')
+        self.assertEqual(approval.status_code, 200, approval.content)
+        path = f'quotes/{quote.pk}/confirm-payment/'
+        self.assertEqual(self.post(path, {'confirmed': True}, self.seller).status_code, 400)
+        paid = self.post(path, {'confirmed': True, 'prescription_reviewed': True}, self.seller)
+        self.assertEqual(paid.status_code, 201, paid.content)
+        self.client.force_login(self.owner)
+        self.assertEqual(self.client.get(f'/api/purchases/{purchase_id}/').json()['payment'], paid.json()['id'])
+        self.assertEqual(self.upload(paid.json()).status_code, 201)
+        self.client.force_login(self.other)
+        self.assertEqual(self.client.get(f'/api/purchases/{purchase_id}/').status_code, 404)
+
     def test_retry_reference_cannot_be_reassigned_or_change_selection(self):
         self.enable()
         data = self.payload()
@@ -151,7 +194,7 @@ class CartCheckoutTests(TestCase):
         preview = self.client.get(url+'?vista=1')
         self.assertIn('inline', preview['Content-Disposition'])
         self.assertIn('no-store', preview['Cache-Control'])
-        preview.close()
+        self.assertTrue(b''.join(preview.streaming_content))
         self.client.force_login(self.other)
         self.assertEqual(self.client.get(url).status_code, 404)
         self.assertEqual(self.client.get(url+'?vista=1').status_code, 404)
@@ -180,6 +223,22 @@ class CartCheckoutTests(TestCase):
         self.assertEqual(browser.post('/api/checkout-payment/', self.payload(), content_type='application/json').status_code, 403)
         self.client.logout()
         self.assertEqual(self.client.post('/api/checkout-payment/', self.payload(), content_type='application/json').status_code, 403)
+
+    def test_staff_summary_uses_real_counts_and_staff_permissions(self):
+        self.enable()
+        payment = self.checkout().json()['payment']
+        self.assertEqual(self.upload(payment).status_code, 201)
+        self.client.force_login(self.owner)
+        self.assertEqual(self.client.get('/api/staff-summary/').json(), {})
+        self.client.force_login(self.seller)
+        summary = self.client.get('/api/staff-summary/').json()
+        self.assertEqual(summary['payments'], 1)
+        self.assertNotIn('workers', summary)
+        self.assertEqual(self.client.get('/api/payments/?state=for_review').json()['count'], summary['payments'])
+        self.assertEqual(self.client.get('/admin/').status_code, 302)
+        self.client.force_login(self.admin)
+        self.assertContains(self.client.get('/admin/'), 'Administración de Ópticas Amaru')
+        self.assertContains(self.client.get('/admin/'), 'Activación de cuentas de clientes')
 
     def test_throttle_prevents_unlimited_checkout_attempts(self):
         self.enable()

@@ -1,0 +1,21 @@
+{% extends "admin/index.html" %}
+{% block content %}
+{% if perms.gestion.change_clientregistration or perms.gestion.change_union or perms.gestion.change_transferpayment %}
+<section aria-labelledby="review-title" class="admin-review-links">
+  <h2 id="review-title">Revisiones pendientes</h2>
+  <ul>
+    {% if perms.gestion.change_clientregistration %}
+    <li><a href="{% url 'admin:gestion_clientregistration_changelist' %}?approved_at__isnull=True">Activación de cuentas de clientes</a></li>
+    {% endif %}
+    {% if perms.gestion.change_union %}
+    <li><a href="/app/sindicatos.html?vista=validaciones">Validación de afiliaciones sindicales</a></li>
+    <li><a href="/app/sindicatos.html">Activación de sindicatos</a></li>
+    {% endif %}
+    {% if perms.gestion.change_transferpayment and perms.gestion.view_transferpayment %}
+    <li><a href="/app/pagos.html?state=for_review">Comprobantes de pago por revisar</a></li>
+    {% endif %}
+  </ul>
+</section>
+{% endif %}
+{{ block.super }}
+{% endblock %}

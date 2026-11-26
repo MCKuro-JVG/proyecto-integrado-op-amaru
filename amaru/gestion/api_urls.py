@@ -12,7 +12,8 @@ for prefix, view in [('benefits',commercial.Benefits),('stock',commercial.Stocks
                      ('brands',commercial.Brands),('product-models',commercial.Models),('stock-categories',commercial.Categories),
                      ('suppliers',commercial.Suppliers),('variants',commercial.Variants)]:
     router.register(prefix,view,basename=prefix)
-urlpatterns=[path('organization-qrs/<int:pk>/',organization_qr.management),
+urlpatterns=[path('staff-summary/', api.staff_summary),
+    path('organization-qrs/<int:pk>/',organization_qr.management),
     path('organization-qrs/<int:pk>/registrations/',organization_qr.registrations),
     path('organization-qrs/<int:pk>/registrations/<int:registration_id>/',organization_qr.affiliation_state),
     path('organization-qrs/<int:pk>/<str:purpose>/image/',organization_qr.image),
